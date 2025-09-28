@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Batch Manager</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <h1><i class="fab fa-whatsapp"></i> WhatsApp Batch Manager</h1>
+            <nav class="nav">
+                <button id="logoutBtn" class="btn btn-secondary" style="display: none;">
+                    <i class="fas fa-sign-out-alt"></i> Sair
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Login Section -->
+    <section id="loginSection" class="section active">
+        <div class="container">
+            <div class="login-card">
+                <h2>Login</h2>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="email">Email:</label>
+                        <input type="email" id="email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Senha:</label>
+                        <input type="password" id="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-sign-in-alt"></i> Entrar
+                    </button>
+                </form>
+                <p>Não tem conta? <a href="#" id="showRegister">Registrar</a></p>
+            </div>
+
+            <div class="login-card" id="registerCard" style="display: none;">
+                <h2>Registrar</h2>
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label for="regName">Nome:</label>
+                        <input type="text" id="regName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regEmail">Email:</label>
+                        <input type="email" id="regEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regPassword">Senha:</label>
+                        <input type="password" id="regPassword" required minlength="6">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-user-plus"></i> Registrar
+                    </button>
+                </form>
+                <p>Já tem conta? <a href="#" id="showLogin">Login</a></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dashboard Section -->
+    <section id="dashboardSection" class="section">
+        <div class="container">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="user-info">
+                    <h3 id="userName"></h3>
+                    <p id="userEmail"></p>
+                </div>
+                
+                <nav class="sidebar-nav">
+                    <button class="nav-btn active" data-section="contactGroupsSection">
+                        <i class="fas fa-users"></i> Grupos de Contatos
+                    </button>
+                    <button class="nav-btn" data-section="whatsappSection">
+                        <i class="fab fa-whatsapp"></i> Instâncias WhatsApp
+                    </button>
+                    <button class="nav-btn" data-section="batchesSection">
+                        <i class="fas fa-paper-plane"></i> Envios em Lote
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Main Content -->
+            <div class="main-content">
+                <!-- Contact Groups Section -->
+                <div id="contactGroupsSection" class="content-section active">
+                    <div class="section-header">
+                        <h2><i class="fas fa-users"></i> Grupos de Contatos</h2>
+                        <button class="btn btn-primary" id="addGroupBtn">
+                            <i class="fas fa-plus"></i> Novo Grupo
+                        </button>
+                    </div>
+
+                    <div class="card">
+                        <div id="groupsList" class="list-container">
+                            <!-- Grupos serão carregados aqui -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- WhatsApp Section -->
+                <div id="whatsappSection" class="content-section">
+                    <div class="section-header">
+                        <h2><i class="fab fa-whatsapp"></i> Instâncias WhatsApp</h2>
+                        <button class="btn btn-primary" id="addInstanceBtn">
+                            <i class="fas fa-plus"></i> Nova Instância
+                        </button>
+                    </div>
+
+                    <div class="card">
+                        <div id="instancesList" class="list-container">
+                            <!-- Instâncias serão carregadas aqui -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Batches Section -->
+                <div id="batchesSection" class="content-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-paper-plane"></i> Envios em Lote</h2>
+                        <button class="btn btn-primary" id="addBatchBtn">
+                            <i class="fas fa-plus"></i> Novo Envio
+                        </button>
+                    </div>
+
+                    <div class="card">
+                        <div id="batchesList" class="list-container">
+                            <!-- Lotes serão carregados aqui -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Modals -->
+    <div id="groupModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3 id="modalTitle">Novo Grupo de Contatos</h3>
+            <form id="groupForm">
+                <div class="form-group">
+                    <label for="groupName">Nome do Grupo:</label>
+                    <input type="text" id="groupName" required>
+                </div>
+                <div class="form-group">
+                    <label for="groupDescription">Descrição:</label>
+                    <textarea id="groupDescription" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Contatos:</label>
+                    <div id="contactsContainer">
+                        <!-- Contatos dinâmicos -->
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="addContactBtn">
+                        <i class="fas fa-plus"></i> Adicionar Contato
+                    </button>
+                </div>
+                <button type="submit" class="btn btn-primary">Salvar Grupo</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loading" class="loading" style="display: none;">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Notification System -->
+    <div id="notification" class="notification"></div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/contactGroups.js"></script>
+    <script src="js/whatsapp.js"></script>
+    <script src="js/batches.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
