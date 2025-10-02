@@ -382,3 +382,153 @@ body {
         margin: 10% auto;
     }
 }
+
+/* Status Badges */
+.status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.status-connected {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.status-connecting {
+    background-color: var(--warning-color);
+    color: black;
+}
+
+.status-disconnected {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+.status-failed {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+/* Group Items */
+.group-item {
+    border: 1px solid #eee;
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.group-item h4 {
+    margin-bottom: 0.5rem;
+    color: var(--dark-color);
+}
+
+.group-participants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.participant {
+    background-color: var(--light-gray);
+    padding: 0.25rem 0.5rem;
+    border-radius: 15px;
+    font-size: 0.8rem;
+}
+
+/* QR Code Styles */
+#qrcodeImage {
+    border: 2px solid #ddd;
+    border-radius: var(--border-radius);
+    padding: 10px;
+    background: white;
+}
+
+/* WhatsApp specific colors */
+.whatsapp-primary {
+    background-color: var(--primary-color);
+}
+
+.whatsapp-secondary {
+    background-color: var(--secondary-color);
+}
+
+.whatsapp-dark {
+    background-color: var(--dark-color);
+}
+
+/* Batch Styles */
+.progress-info {
+    margin: 10px 0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 5px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #4CAF50;
+    transition: width 0.3s ease;
+}
+
+.char-count {
+    display: block;
+    text-align: right;
+    margin-top: 5px;
+    color: #666;
+}
+
+.batch-info {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.results-section {
+    margin-top: 20px;
+}
+
+.result-item {
+    padding: 10px;
+    margin: 5px 0;
+    border-left: 4px solid #ddd;
+    background: #f8f9fa;
+}
+
+.result-item.sent {
+    border-left-color: #4CAF50;
+}
+
+.result-item.failed {
+    border-left-color: #f44336;
+}
+
+.result-item.cancelled {
+    border-left-color: #ff9800;
+}
+
+/* Multiple select styling */
+select[multiple] {
+    min-height: 120px;
+    padding: 8px;
+}
+
+select[multiple] option {
+    padding: 8px;
+    margin: 2px 0;
+    border-radius: 4px;
+}
+
+select[multiple] option:checked {
+    background: #007bff linear-gradient(0deg, #007bff 0%, #007bff 100%);
+    color: white;
+}

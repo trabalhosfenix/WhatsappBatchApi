@@ -1,10 +1,20 @@
+// 📁 app.js
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const mongoose = require('mongoose'); // ✅ ADICIONAR
 
-const connectDB = require('./config/database');
+// ✅ CORREÇÃO: Remover import do connectDB e conectar diretamente
+// Conectar ao MongoDB
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/whatsapp-batch-api';
+mongoose.connect(MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('✅ Conectado ao MongoDB'))
+.catch(err => console.error('❌ Erro ao conectar MongoDB:', err));
 
 // Importar rotas
 const authRoutes = require('./routes/auth');
@@ -14,12 +24,9 @@ const whatsappRoutes = require('./routes/whatsapp');
 
 const app = express();
 
-// Conectar ao MongoDB
-connectDB();
-
 // Middlewares de segurança
 app.use(helmet({
-  contentSecurityPolicy: false // Simplificar para desenvolvimento
+  contentSecurityPolicy: false
 }));
 app.use(cors({
   origin: process.env.CORS_ORIGIN || '*',
@@ -47,29 +54,42 @@ app.use('/api/batches', batchRoutes);
 app.use('/api/contact-groups', contactGroupRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 
-// Rota para a interface web
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/index.html'));
-});
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Rota para a interface web (se existir)
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'WhatsApp Batch API',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      batches: '/api/batches',
+      contactGroups: '/api/contact-groups',
+      whatsapp: '/api/whatsapp'
+    }
   });
 });
 
 // Rota não encontrada
 app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Rota não encontrada' });
+  res.status(404).json({ 
+    success: false,
+    error: 'Rota não encontrada' 
+  });
 });
 
 // Error handling
 app.use((error, req, res, next) => {
-  console.error('Erro:', error.stack);
+  console.error('❌ Erro:', error.stack);
   res.status(500).json({ 
+    success: false,
     error: 'Erro interno do servidor',
     ...(process.env.NODE_ENV === 'development' && { details: error.message })
   });
