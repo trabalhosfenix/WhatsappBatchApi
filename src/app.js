@@ -5,6 +5,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const mongoose = require('mongoose'); // ✅ ADICIONAR
+const mediaBatchRoutes = require('./routes/mediaBatches');
+
 
 // ✅ CORREÇÃO: Remover import do connectDB e conectar diretamente
 // Conectar ao MongoDB
@@ -37,6 +39,13 @@ app.use(express.urlencoded({ extended: true }));
 
 // Servir arquivos estáticos
 app.use(express.static(path.join(__dirname, '../public')));
+
+// Adicione na seção de rotas:
+app.use('/api/media', mediaBatchRoutes);
+
+// Servir arquivos de mídia estáticos (se necessário)
+app.use('/media', express.static(path.join(__dirname, 'uploads/media')));
+
 
 // Rate limiting
 const limiter = rateLimit({
