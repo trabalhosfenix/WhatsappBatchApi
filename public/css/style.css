@@ -1,4 +1,5 @@
 :root {
+    /* Tema Padrão WhatsApp */
     --primary-color: #25D366;
     --secondary-color: #128C7E;
     --dark-color: #075E54;
@@ -11,19 +12,197 @@
     --dark-gray: #343a40;
     --border-radius: 8px;
     --box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    
+    /* Variáveis de Tema */
+    --theme-primary: var(--primary-color);
+    --theme-secondary: var(--secondary-color);
+    --theme-dark: var(--dark-color);
+    --theme-light: var(--light-color);
+    --theme-background: white;
+    --theme-text: var(--dark-gray);
+    --theme-font-primary: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --theme-font-heading: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-* {
+:root[data-theme="rosa-digital"] {
+    /* Cores Rosa Digital */
+    --theme-primary: #C2185B;
+    --theme-secondary: #F8BBD0;
+    --theme-dark: #880E4F;
+    --theme-light: #FCE4EC;
+    --theme-background: #FAF8F9;
+    --theme-text: #4A4A4A;
+    --theme-font-primary: 'Lato', 'Source Sans Pro', sans-serif;
+    --theme-font-heading: 'Playfair Display', serif;
+    
+    /* Sobrescrever cores padrão */
+    --primary-color: var(--theme-primary);
+    --secondary-color: var(--theme-secondary);
+    --dark-color: var(--theme-dark);
+    --light-color: var(--theme-light);
+}
+
+/* Reset e configurações base */
+html, body {
+    height: 100%;
     margin: 0;
     padding: 0;
-    box-sizing: border-box;
+    overflow: hidden; /* Remove rolagem global */
+    font-family: var(--theme-font-primary);
+    background-color: var(--theme-background);
+    color: var(--theme-text);
 }
 
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    line-height: 1.6;
-    color: var(--dark-gray);
-    background-color: #f5f5f5;
+/* Header melhorado com melhor contraste */
+.header {
+    background: linear-gradient(135deg, var(--theme-dark), var(--theme-primary));
+    color: white;
+    padding: 1rem 0;
+    box-shadow: var(--box-shadow);
+    position: relative;
+    overflow: hidden;
+}
+
+.header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 50%);
+    pointer-events: none;
+}
+
+.header h1 {
+    font-size: 2rem;
+    font-weight: 900;
+    margin: 0;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    letter-spacing: -0.5px;
+}
+
+.header h1 i {
+    margin-right: 12px;
+    font-size: 1.8rem;
+    filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
+}
+
+/* Melhor contraste para o tema Rosa Digital */
+:root[data-theme="rosa-digital"] .header h1 {
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.4);
+}
+
+:root[data-theme="rosa-digital"] .header h1 i {
+    color: white;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--theme-font-heading);
+    color: var(--theme-primary);
+}
+
+h1 {
+    font-weight: 900;
+}
+
+h2, h3, h4 {
+    font-weight: 700;
+}
+
+.subtitle {
+    font-family: var(--theme-font-heading);
+    font-style: italic;
+    color: var(--theme-secondary);
+    font-weight: 400;
+}
+
+.btn-primary {
+    background-color: var(--theme-primary);
+    border-color: var(--theme-primary);
+}
+
+.btn-primary:hover {
+    background-color: var(--theme-dark);
+    border-color: var(--theme-dark);
+}
+
+.nav-btn:hover,
+.nav-btn.active {
+    background-color: var(--theme-light);
+    color: var(--theme-primary);
+}
+
+/* Seletor de Tema */
+.theme-selector {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+
+.theme-toggle {
+    background: var(--theme-primary);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    cursor: pointer;
+    box-shadow: var(--box-shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+}
+
+.theme-menu {
+    position: absolute;
+    bottom: 60px;
+    right: 0;
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: 1rem;
+    min-width: 200px;
+    display: none;
+}
+
+.theme-menu.active {
+    display: block;
+}
+
+.theme-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--border-radius);
+}
+
+.theme-option:hover {
+    background-color: var(--light-gray);
+}
+
+.theme-preview {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid #ddd;
+}
+
+.theme-preview.whatsapp {
+    background: linear-gradient(135deg, #075E54, #25D366);
+}
+
+.theme-preview.rosa-digital {
+    background: linear-gradient(135deg, #C2185B, #F8BBD0);
 }
 
 .container {
@@ -32,32 +211,11 @@ body {
     padding: 0 20px;
 }
 
-/* Header */
-.header {
-    background: linear-gradient(135deg, var(--dark-color), var(--secondary-color));
-    color: white;
-    padding: 1rem 0;
-    box-shadow: var(--box-shadow);
-}
-
-.header .container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.header h1 {
-    font-size: 1.8rem;
-}
-
-.header h1 i {
-    margin-right: 10px;
-}
-
-/* Sections */
+/* Sections com altura total da viewport */
 .section {
     display: none;
-    min-height: calc(100vh - 80px);
+    min-height: 100vh; /* Ocupa 100% da viewport */
+    overflow: hidden; /* Remove rolagem da seção */
 }
 
 .section.active {
@@ -149,11 +307,13 @@ body {
     background-color: #c82333;
 }
 
-/* Dashboard */
+/* Dashboard com altura total */
 .dashboard .container {
     display: flex;
     gap: 2rem;
     padding: 2rem 20px;
+    height: calc(100vh - 80px); /* Altura total menos header */
+    overflow: hidden; /* Remove rolagem do container */
 }
 
 /* Sidebar */
@@ -194,17 +354,28 @@ body {
     color: var(--dark-color);
 }
 
-/* Main Content */
+/* Main Content com altura total */
 .main-content {
     flex: 1;
+    height: 100%;
+    overflow: hidden; /* Remove rolagem do conteúdo principal */
 }
 
 .content-section {
     display: none;
+    height: 100%;
+    overflow: hidden; /* Remove rolagem das seções */
 }
 
 .content-section.active {
     display: block;
+}
+
+/* Ajuste para o card principal */
+.content-section .card {
+    height: calc(100% - 80px); /* Altura menos o header da seção */
+    display: flex;
+    flex-direction: column;
 }
 
 .section-header {
@@ -226,9 +397,33 @@ body {
     padding: 1.5rem;
 }
 
+/* List Container com rolagem */
 .list-container {
     display: grid;
     gap: 1rem;
+    flex: 1;
+    max-height: none; /* Remove max-height fixo */
+    overflow-y: auto; /* Rolagem vertical */
+    padding-right: 5px; /* Espaço para a scrollbar */
+}
+
+/* Custom scrollbar para listas */
+.list-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.list-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.list-container::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 3px;
+}
+
+.list-container::-webkit-scrollbar-thumb:hover {
+    background: var(--secondary-color);
 }
 
 .list-item {
@@ -254,7 +449,7 @@ body {
     gap: 0.5rem;
 }
 
-/* Modals */
+/* Modais com rolagem */
 .modal {
     display: none;
     position: fixed;
@@ -273,7 +468,36 @@ body {
     border-radius: var(--border-radius);
     width: 90%;
     max-width: 500px;
+    max-height: 80vh; /* Altura máxima */
+    overflow-y: auto; /* Rolagem vertical */
     position: relative;
+}
+
+/* Modal maior para detalhes */
+.modal-content.large {
+    max-width: 800px;
+    max-height: 90vh;
+}
+
+/* Ajuste para modais com muito conteúdo */
+#batchDetailsModal .modal-content {
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+/* Garantir que o botão close fique fixo */
+.modal-content .close {
+    position: absolute;
+    right: 1rem;
+    top: 1rem;
+    z-index: 1001;
+    background: rgba(255,255,255,0.9);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .close {
@@ -361,26 +585,39 @@ body {
     cursor: pointer;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-    .dashboard .container {
-        flex-direction: column;
-    }
-    
-    .sidebar {
-        width: 100%;
-    }
-    
-    .section-header {
-        flex-direction: column;
-        gap: 1rem;
-        align-items: flex-start;
-    }
-    
-    .modal-content {
-        width: 95%;
-        margin: 10% auto;
-    }
+/* Paginação */
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #eee;
+}
+
+.pagination-info {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.pagination-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: var(--light-color);
+    border-color: var(--primary-color);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* Status Badges */
@@ -531,4 +768,102 @@ select[multiple] option {
 select[multiple] option:checked {
     background: #007bff linear-gradient(0deg, #007bff 0%, #007bff 100%);
     color: white;
+}
+
+/* Ajustes responsivos */
+@media (max-width: 768px) {
+    .dashboard .container {
+        flex-direction: column;
+        height: auto;
+        min-height: calc(100vh - 80px);
+    }
+    
+    .sidebar {
+        width: 100%;
+    }
+    
+    .section-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+    }
+    
+    .modal-content {
+        width: 95%;
+        margin: 5% auto;
+        max-height: 90vh;
+    }
+    
+    .list-container {
+        max-height: 50vh;
+    }
+    
+    .header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .pagination {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+}
+
+/* Melhorar a aparência dos modais em mobile */
+@media (max-width: 480px) {
+    .modal-content {
+        padding: 1.5rem 1rem;
+    }
+    
+    .pagination {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .header h1 {
+        font-size: 1.3rem;
+    }
+    
+    .header h1 i {
+        font-size: 1.5rem;
+        margin-right: 8px;
+    }
+}
+/* 
+#contactGroupsSection.content-section.active {
+    display: block;
+    height: 100%;
+    position: relative;
+}
+
+#contactGroupsSection .card {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+#contactGroupsSection #groupsList {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+} */
+
+/* PERMITIR ROLAGEM DA PÁGINA INTEIRA QUANDO NECESSÁRIO */
+html, body {
+    overflow: auto; /* Mude de hidden para auto */
+    height: auto;   /* Mude de 100% para auto */
+}
+
+.dashboard .container {
+    overflow: auto; /* Permite rolagem do container principal */
+    height: auto;
+    min-height: calc(100vh - 80px);
+}
+
+.main-content {
+    overflow: visible;
+    height: auto;
 }

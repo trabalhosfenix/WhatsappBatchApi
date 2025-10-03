@@ -2,18 +2,73 @@
 let authInstance = null;
 
 // ===== AUTH CLASS =====
+// Update existing classes to use new systems
 class Auth {
     constructor() {
         this.token = localStorage.getItem('authToken');
         this.user = JSON.parse(localStorage.getItem('user'));
         this.init();
     }
-
     init() {
         this.checkAuth();
         this.setupEventListeners();
         authInstance = this; // Set global instance
     }
+
+    async login() {
+        const email = document.getElementById('email')?.value;
+        const password = document.getElementById('password')?.value;
+
+        if (!email || !password) {
+            this.showNotification('Email e senha são obrigatórios', 'error');
+            return;
+        }
+
+        if (!SecurityManager.validateEmail(email)) {
+            this.showNotification('Email inválido', 'error');
+            return;
+        }
+
+        try {
+            this.showLoading();
+            
+            // Use state manager for pending requests
+            const requestId = `login_${Date.now()}`;
+            stateManager.state.pendingRequests.set(requestId, true);
+
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.token = data.token;
+                this.user = SecurityManager.sanitizeObject(data.user);
+                
+                localStorage.setItem('authToken', this.token);
+                localStorage.setItem('user', JSON.stringify(this.user));
+                
+                // Update state manager
+                stateManager.setState('user', this.user);
+                stateManager.state.pendingRequests.delete(requestId);
+                
+                this.showNotification('Login realizado com sucesso!', 'success');
+            } else {
+                throw new Error(data.error || 'Erro no login');
+            }
+        } catch (error) {
+            this.showNotification(error.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    
 
     setupEventListeners() {
         // Login form
@@ -63,7 +118,7 @@ class Auth {
     showRegister() {
         const loginCard = document.getElementById('loginForm')?.closest('.login-card');
         const registerCard = document.getElementById('registerCard');
-        
+
         if (loginCard) loginCard.style.display = 'none';
         if (registerCard) registerCard.style.display = 'block';
     }
@@ -71,7 +126,7 @@ class Auth {
     showLogin() {
         const registerCard = document.getElementById('registerCard');
         const loginCard = document.getElementById('loginForm')?.closest('.login-card');
-        
+
         if (registerCard) registerCard.style.display = 'none';
         if (loginCard) loginCard.style.display = 'block';
     }
@@ -100,10 +155,10 @@ class Auth {
             if (data.success) {
                 this.token = data.token;
                 this.user = data.user;
-                
+
                 localStorage.setItem('authToken', this.token);
                 localStorage.setItem('user', JSON.stringify(this.user));
-                
+
                 this.showNotification('Login realizado com sucesso!', 'success');
                 this.showDashboard();
             } else {
@@ -156,7 +211,7 @@ class Auth {
         localStorage.removeItem('user');
         this.token = null;
         this.user = null;
-        
+
         this.showLoginSection();
         this.showNotification('Logout realizado com sucesso!', 'success');
     }
@@ -173,7 +228,7 @@ class Auth {
         const loginSection = document.getElementById('loginSection');
         const dashboardSection = document.getElementById('dashboardSection');
         const logoutBtn = document.getElementById('logoutBtn');
-        
+
         if (loginSection) loginSection.classList.add('active');
         if (dashboardSection) dashboardSection.classList.remove('active');
         if (logoutBtn) logoutBtn.style.display = 'none';
@@ -183,15 +238,15 @@ class Auth {
         const loginSection = document.getElementById('loginSection');
         const dashboardSection = document.getElementById('dashboardSection');
         const logoutBtn = document.getElementById('logoutBtn');
-        
+
         if (loginSection) loginSection.classList.remove('active');
         if (dashboardSection) dashboardSection.classList.add('active');
         if (logoutBtn) logoutBtn.style.display = 'block';
-        
+
         // Update user info
         const userName = document.getElementById('userName');
         const userEmail = document.getElementById('userEmail');
-        
+
         if (userName) userName.textContent = this.user.name;
         if (userEmail) userEmail.textContent = this.user.email;
     }
@@ -209,7 +264,7 @@ class Auth {
             console.warn('Elemento de notificação não encontrado');
             return;
         }
-        
+
         notification.textContent = message;
         notification.className = `notification ${type}`;
         notification.style.display = 'block';
@@ -309,7 +364,7 @@ class ContactGroups {
     renderGroups(groups) {
         const container = document.getElementById('groupsList');
         if (!container) return;
-        
+
         if (!groups || groups.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -344,7 +399,7 @@ class ContactGroups {
         this.currentGroup = group;
         const modal = document.getElementById('groupModal');
         const title = document.getElementById('modalTitle');
-        
+
         if (!modal || !title) return;
 
         if (group) {
@@ -354,7 +409,7 @@ class ContactGroups {
             title.textContent = 'Novo Grupo';
             this.clearGroupForm();
         }
-        
+
         modal.style.display = 'block';
     }
 
@@ -369,14 +424,14 @@ class ContactGroups {
     populateGroupForm(group) {
         const nameInput = document.getElementById('groupName');
         const descInput = document.getElementById('groupDescription');
-        
+
         if (nameInput) nameInput.value = group.name;
         if (descInput) descInput.value = group.description || '';
-        
+
         const contactsContainer = document.getElementById('contactsContainer');
         if (contactsContainer) {
             contactsContainer.innerHTML = '';
-            
+
             if (group.contacts) {
                 group.contacts.forEach(contact => {
                     this.addContactField(contact.name, contact.phone);
@@ -388,19 +443,19 @@ class ContactGroups {
     clearGroupForm() {
         const form = document.getElementById('groupForm');
         const contactsContainer = document.getElementById('contactsContainer');
-        
+
         if (form) form.reset();
         if (contactsContainer) contactsContainer.innerHTML = '';
-        
+
         this.addContactField(); // Add one empty contact field
     }
 
     addContactField(name = '', phone = '') {
         const container = document.getElementById('contactsContainer');
         if (!container) return;
-        
+
         const contactId = Date.now();
-        
+
         const contactHtml = `
             <div class="contact-item" data-id="${contactId}">
                 <input type="text" placeholder="Nome" value="${name}" required>
@@ -410,7 +465,7 @@ class ContactGroups {
                 </button>
             </div>
         `;
-        
+
         container.insertAdjacentHTML('beforeend', contactHtml);
     }
 
@@ -424,21 +479,21 @@ class ContactGroups {
     async saveGroup() {
         const nameInput = document.getElementById('groupName');
         const descInput = document.getElementById('groupDescription');
-        
+
         if (!nameInput || !authInstance) return;
-        
+
         const name = nameInput.value;
         const description = descInput ? descInput.value : '';
-        
+
         // Collect contacts
         const contacts = [];
         const contactElements = document.querySelectorAll('.contact-item');
-        
+
         contactElements.forEach(element => {
             const inputs = element.querySelectorAll('input');
             const name = inputs[0]?.value.trim();
             const phone = inputs[1]?.value.trim();
-            
+
             if (name && phone) {
                 contacts.push({ name, phone });
             }
@@ -451,13 +506,13 @@ class ContactGroups {
 
         try {
             authInstance.showLoading();
-            
-            const url = this.currentGroup 
+
+            const url = this.currentGroup
                 ? `/api/contact-groups/${this.currentGroup._id}`
                 : '/api/contact-groups';
-                
+
             const method = this.currentGroup ? 'PUT' : 'POST';
-            
+
             const response = await fetch(url, {
                 method: method,
                 headers: authInstance.getAuthHeaders(),
@@ -468,7 +523,7 @@ class ContactGroups {
 
             if (data.success) {
                 authInstance.showNotification(
-                    this.currentGroup ? 'Grupo atualizado com sucesso!' : 'Grupo criado com sucesso!', 
+                    this.currentGroup ? 'Grupo atualizado com sucesso!' : 'Grupo criado com sucesso!',
                     'success'
                 );
                 this.closeGroupModal();
@@ -486,7 +541,7 @@ class ContactGroups {
     async editGroup(groupId) {
         try {
             if (!authInstance) return;
-            
+
             authInstance.showLoading();
             const response = await fetch(`/api/contact-groups/${groupId}`, {
                 headers: authInstance.getAuthHeaders()
@@ -581,7 +636,7 @@ class WhatsAppManager {
                 console.error('Auth instance not available');
                 return;
             }
-            
+
             authInstance.showLoading();
             const response = await fetch('/api/whatsapp/instances', {
                 headers: authInstance.getAuthHeaders()
@@ -609,7 +664,7 @@ class WhatsAppManager {
     renderInstances(instances) {
         const container = document.getElementById('instancesList');
         if (!container) return;
-        
+
         if (!instances || instances.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -682,7 +737,7 @@ class WhatsAppManager {
         this.currentInstance = instance;
         const modal = document.getElementById('instanceModal');
         const title = document.getElementById('instanceModalTitle');
-        
+
         if (!modal || !title) return;
 
         if (instance) {
@@ -692,7 +747,7 @@ class WhatsAppManager {
             title.textContent = 'Nova Instância WhatsApp';
             this.clearInstanceForm();
         }
-        
+
         modal.style.display = 'block';
     }
 
@@ -734,7 +789,7 @@ class WhatsAppManager {
 
         try {
             authInstance.showLoading();
-            
+
             const response = await fetch('/api/whatsapp/instances', {
                 method: 'POST',
                 headers: authInstance.getAuthHeaders(),
@@ -747,15 +802,15 @@ class WhatsAppManager {
 
             if (data.success) {
                 authInstance.showNotification(
-                    data.message || 'Instância criada com sucesso!', 
+                    data.message || 'Instância criada com sucesso!',
                     'success'
                 );
                 this.closeInstanceModal();
                 this.loadInstances();
-                
+
                 if (data.instance && data.instance._id) {
                     console.log('Instância criada com ID:', data.instance._id);
-                    
+
                     setTimeout(() => {
                         this.showQRCode(data.instance._id);
                     }, 2000);
@@ -774,7 +829,7 @@ class WhatsAppManager {
     async showQRCode(instanceId) {
         try {
             if (!authInstance) return;
-            
+
             authInstance.showLoading();
             const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
                 headers: authInstance.getAuthHeaders()
@@ -797,7 +852,7 @@ class WhatsAppManager {
     openQRCodeModal(instanceId, qrCode) {
         const modal = document.getElementById('qrcodeModal');
         const qrImage = document.getElementById('qrcodeImage');
-        
+
         if (!modal || !qrImage) {
             authInstance.showNotification('Elementos do modal de QR Code não encontrados', 'error');
             return;
@@ -805,9 +860,9 @@ class WhatsAppManager {
 
         qrImage.src = qrCode;
         qrImage.alt = 'QR Code para conectar WhatsApp';
-        
+
         modal.style.display = 'block';
-        
+
         this.startQRCodeCheck(instanceId);
     }
 
@@ -821,15 +876,15 @@ class WhatsAppManager {
 
     startQRCodeCheck(instanceId) {
         this.stopQRCodeCheck();
-        
+
         this.qrCodeInterval = setInterval(async () => {
             try {
                 const response = await fetch(`/api/whatsapp/instances/${instanceId}`, {
                     headers: authInstance.getAuthHeaders()
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success && data.instance && data.instance.status === 'connected') {
                     authInstance.showNotification('WhatsApp conectado com sucesso!', 'success');
                     this.closeQRCodeModal();
@@ -880,7 +935,7 @@ class WhatsAppManager {
     async viewGroups(instanceId) {
         try {
             if (!authInstance) return;
-            
+
             authInstance.showLoading();
             const response = await fetch(`/api/whatsapp/instances/${instanceId}/groups`, {
                 headers: authInstance.getAuthHeaders()
@@ -903,7 +958,7 @@ class WhatsAppManager {
     showGroupsModal(groups) {
         const modal = document.getElementById('groupsModal');
         const container = document.getElementById('whatsappGroupsList');
-        
+
         if (!modal || !container) {
             authInstance.showNotification('Elementos do modal de grupos não encontrados', 'error');
             return;
@@ -925,7 +980,7 @@ class WhatsAppManager {
                 </div>
             `).join('');
         }
-        
+
         modal.style.display = 'block';
     }
 
@@ -970,21 +1025,21 @@ class WhatsAppManager {
 
         try {
             authInstance.showLoading();
-            
+
             // Obter o nome da sessão a partir do ID da instância
             const instanceResponse = await fetch(`/api/whatsapp/instances/${instanceId}`, {
                 method: 'GET',
                 headers: authInstance.getAuthHeaders()
             });
-            
+
             const instanceData = await instanceResponse.json();
-            
+
             if (!instanceData.success) {
                 throw new Error(instanceData.error || 'Erro ao obter dados da instância');
             }
-            
+
             const sessionName = instanceData.instance.sessionName;
-            
+
             // Excluir a instância usando o nome da sessão
             const response = await fetch(`/api/whatsapp/instances/${sessionName}`, {
                 method: 'DELETE',
@@ -1080,7 +1135,7 @@ class Batches {
     renderBatches(batches) {
         const container = document.getElementById('batchesList');
         if (!container) return;
-        
+
         if (!batches || batches.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -1157,67 +1212,67 @@ class Batches {
     }
 
     async openBatchModal() {
-    try {
-        // Carregar apenas instâncias conectadas E com socket ativo
-        const [instancesResponse, groupsResponse] = await Promise.all([
-            fetch('/api/whatsapp/instances', {
-                headers: authInstance.getAuthHeaders()
-            }),
-            fetch('/api/contact-groups?limit=100', {
-                headers: authInstance.getAuthHeaders()
-            })
-        ]);
+        try {
+            // Carregar apenas instâncias conectadas E com socket ativo
+            const [instancesResponse, groupsResponse] = await Promise.all([
+                fetch('/api/whatsapp/instances', {
+                    headers: authInstance.getAuthHeaders()
+                }),
+                fetch('/api/contact-groups?limit=100', {
+                    headers: authInstance.getAuthHeaders()
+                })
+            ]);
 
-        const instancesData = await instancesResponse.json();
-        const groupsData = await groupsResponse.json();
+            const instancesData = await instancesResponse.json();
+            const groupsData = await groupsResponse.json();
 
-        if (!instancesData.success || !groupsData.success) {
-            throw new Error('Erro ao carregar dados para criar lote');
-        }
+            if (!instancesData.success || !groupsData.success) {
+                throw new Error('Erro ao carregar dados para criar lote');
+            }
 
-        // Filtrar apenas instâncias conectadas
-        const connectedInstances = instancesData.instances.filter(inst => 
-            inst.status === 'connected'
-        );
-
-        // Verificar quais instâncias realmente têm socket ativo
-        const instancesWithSocket = await Promise.all(
-            connectedInstances.map(async (instance) => {
-                try {
-                    const response = await fetch(`/api/whatsapp/instances/${instance._id}`, {
-                        headers: authInstance.getAuthHeaders()
-                    });
-                    const data = await response.json();
-                    return data.success ? instance : null;
-                } catch (error) {
-                    return null;
-                }
-            })
-        );
-
-        const availableInstances = instancesWithSocket.filter(inst => inst !== null);
-        const groups = groupsData.contactGroups || [];
-
-        if (availableInstances.length === 0) {
-            authInstance.showNotification(
-                'Nenhuma instância WhatsApp conectada e disponível no momento. ' +
-                'Verifique se a instância está online e tente novamente.', 
-                'warning'
+            // Filtrar apenas instâncias conectadas
+            const connectedInstances = instancesData.instances.filter(inst =>
+                inst.status === 'connected'
             );
-            return;
-        }
 
-        if (groups.length === 0) {
-            authInstance.showNotification('Nenhum grupo de contatos disponível', 'warning');
-            return;
-        }
+            // Verificar quais instâncias realmente têm socket ativo
+            const instancesWithSocket = await Promise.all(
+                connectedInstances.map(async (instance) => {
+                    try {
+                        const response = await fetch(`/api/whatsapp/instances/${instance._id}`, {
+                            headers: authInstance.getAuthHeaders()
+                        });
+                        const data = await response.json();
+                        return data.success ? instance : null;
+                    } catch (error) {
+                        return null;
+                    }
+                })
+            );
 
-        this.showBatchModal(availableInstances, groups);
-        
-    } catch (error) {
-        authInstance.showNotification(error.message, 'error');
+            const availableInstances = instancesWithSocket.filter(inst => inst !== null);
+            const groups = groupsData.contactGroups || [];
+
+            if (availableInstances.length === 0) {
+                authInstance.showNotification(
+                    'Nenhuma instância WhatsApp conectada e disponível no momento. ' +
+                    'Verifique se a instância está online e tente novamente.',
+                    'warning'
+                );
+                return;
+            }
+
+            if (groups.length === 0) {
+                authInstance.showNotification('Nenhum grupo de contatos disponível', 'warning');
+                return;
+            }
+
+            this.showBatchModal(availableInstances, groups);
+
+        } catch (error) {
+            authInstance.showNotification(error.message, 'error');
+        }
     }
-}
 
     showBatchModal(instances, groups) {
         // Criar modal dinamicamente se não existir
@@ -1231,13 +1286,13 @@ class Batches {
         const groupsSelect = document.getElementById('batchGroups');
 
         if (instanceSelect) {
-            instanceSelect.innerHTML = instances.map(instance => 
+            instanceSelect.innerHTML = instances.map(instance =>
                 `<option value="${instance._id}">${instance.sessionName} (${instance.phoneNumber})</option>`
             ).join('');
         }
 
         if (groupsSelect) {
-            groupsSelect.innerHTML = groups.map(group => 
+            groupsSelect.innerHTML = groups.map(group =>
                 `<option value="${group._id}">${group.name} (${group.contactCount} contatos)</option>`
             ).join('');
         }
@@ -1284,7 +1339,7 @@ class Batches {
         `;
 
         document.body.insertAdjacentHTML('beforeend', modalHTML);
-        
+
         // Configurar event listeners do novo modal
         const messageTextarea = document.getElementById('batchMessage');
         if (messageTextarea) {
@@ -1381,7 +1436,7 @@ class Batches {
                 authInstance.showNotification('Lote criado e envio iniciado!', 'success');
                 this.closeBatchModal();
                 this.loadBatches();
-                
+
                 // Atualizar automaticamente o progresso
                 this.startBatchProgressCheck(data.batch._id);
             } else {
@@ -1400,15 +1455,15 @@ class Batches {
                 const response = await fetch(`/api/batches/${batchId}`, {
                     headers: authInstance.getAuthHeaders()
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (data.success) {
                     const batch = data.batch;
-                    
+
                     // Atualizar a lista se o batch estiver visível
                     this.loadBatches();
-                    
+
                     // Parar de verificar se o batch foi finalizado
                     if (['completed', 'failed', 'cancelled'].includes(batch.status)) {
                         clearInterval(checkInterval);
@@ -1424,7 +1479,7 @@ class Batches {
     async viewBatch(batchId) {
         try {
             if (!authInstance) return;
-            
+
             authInstance.showLoading();
             const response = await fetch(`/api/batches/${batchId}`, {
                 headers: authInstance.getAuthHeaders()
@@ -1463,17 +1518,17 @@ class Batches {
                     <div class="results-section">
                         <h4>Resultados do Envio</h4>
                         <div class="results-list" style="max-height: 400px; overflow-y: auto;">
-                            ${batch.results && batch.results.length > 0 ? 
-                                batch.results.map(result => `
+                            ${batch.results && batch.results.length > 0 ?
+                batch.results.map(result => `
                                     <div class="result-item ${result.status}">
                                         <strong>${result.contact}</strong> (${result.phone}) - 
                                         <span class="status-${result.status}">${result.status === 'sent' ? '✅' : '❌'} ${result.status}</span>
                                         ${result.error ? `<br><small>Erro: ${result.error}</small>` : ''}
                                         <br><small>Grupo: ${result.group} | ${new Date(result.timestamp).toLocaleString('pt-BR')}</small>
                                     </div>
-                                `).join('') : 
-                                '<p>Nenhum resultado disponível</p>'
-                            }
+                                `).join('') :
+                '<p>Nenhum resultado disponível</p>'
+            }
                         </div>
                     </div>
                 </div>
@@ -1487,10 +1542,10 @@ class Batches {
         }
 
         document.body.insertAdjacentHTML('beforeend', modalHTML);
-        
+
         const modal = document.getElementById('batchDetailsModal');
         const closeBtn = modal.querySelector('.close');
-        
+
         closeBtn.addEventListener('click', () => {
             modal.remove();
         });
@@ -1557,6 +1612,8 @@ class Batches {
 class App {
     constructor() {
         this.currentSection = 'contactGroupsSection';
+        this.stateManager = stateManager;
+        this.themeManager = null;
         this.auth = null;
         this.contactGroups = null;
         this.whatsappManager = null;
@@ -1564,26 +1621,98 @@ class App {
         this.init();
     }
 
-    init() {
-        this.initializeModules();
-        this.setupNavigation();
-        this.setupSectionLoading();
-        
-        // Make available globally
-        window.app = this;
+    async init() {
+        try {
+            // Initialize core systems first
+            await this.initializeCoreSystems();
+
+            // Then initialize feature modules
+            this.initializeModules();
+            this.setupNavigation();
+            this.setupSectionLoading();
+
+            // Make available globally
+            window.app = this;
+
+            console.log('App initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize app:', error);
+            this.showFatalError('Falha ao inicializar a aplicação');
+        }
+    }
+
+    async initializeCoreSystems() {
+        // Initialize theme manager
+        this.themeManager = new ThemeManager();
+
+        // Initialize state manager subscriptions
+        this.setupStateSubscriptions();
+
+        // Initialize error handling
+        this.setupErrorHandling();
+    }
+
+    setupStateSubscriptions() {
+        // Theme changes
+        this.stateManager.subscribe('theme', (theme) => {
+            document.body.setAttribute('data-theme', theme);
+        });
+
+        // Loading state
+        this.stateManager.subscribe('loading', (loading) => {
+            const loadingElement = document.getElementById('loading');
+            if (loadingElement) {
+                loadingElement.style.display = loading ? 'flex' : 'none';
+            }
+        });
+
+        // User state
+        this.stateManager.subscribe('user', (user) => {
+            if (user) {
+                this.showDashboard();
+            } else {
+                this.showLoginSection();
+            }
+        });
+    }
+
+    setupErrorHandling() {
+        window.addEventListener('error', (event) => {
+            console.error('Global error:', event.error);
+            this.showNotification('Ocorreu um erro inesperado', 'error');
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('Unhandled promise rejection:', event.reason);
+            this.showNotification('Erro na operação', 'error');
+        });
+    }
+
+    showFatalError(message) {
+        const errorHtml = `
+            <div style="padding: 2rem; text-align: center;">
+                <i class="fas fa-exclamation-triangle fa-3x" style="color: var(--danger-color); margin-bottom: 1rem;"></i>
+                <h2>Erro Crítico</h2>
+                <p>${SecurityManager.sanitizeHTML(message)}</p>
+                <button class="btn btn-primary" onclick="location.reload()">
+                    <i class="fas fa-redo"></i> Recarregar Aplicação
+                </button>
+            </div>
+        `;
+        document.body.innerHTML = errorHtml;
     }
 
     initializeModules() {
         // Initialize Auth first
         this.auth = new Auth();
-        
+
         // Then initialize other modules
         this.contactGroups = new ContactGroups();
         this.contactGroups.init();
-        
+
         this.whatsappManager = new WhatsAppManager();
         this.whatsappManager.init();
-        
+
         this.batches = new Batches();
         this.batches.init();
     }
@@ -1619,17 +1748,17 @@ class App {
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.remove('active');
         });
-        
+
         const activeBtn = document.querySelector(`[data-section="${sectionId}"]`);
         if (activeBtn) activeBtn.classList.add('active');
 
         document.querySelectorAll('.content-section').forEach(section => {
             section.classList.remove('active');
         });
-        
+
         const targetSection = document.getElementById(sectionId);
         if (targetSection) targetSection.classList.add('active');
-        
+
         this.currentSection = sectionId;
     }
 
@@ -1650,6 +1779,8 @@ class App {
                 break;
         }
     }
+
+
 }
 
 // Global utility functions
