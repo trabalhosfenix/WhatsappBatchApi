@@ -7,21 +7,12 @@
     <title>WhatsApp Batch Manager</title>
     <link rel="stylesheet" href="css/style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <!-- Adicionar no <head> -->
     <link
         href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Lato:wght@300;400;700&display=swap"
         rel="stylesheet">
-
-    <!-- Adicionar antes do </body> -->
-    <script src="js/security.js"></script>
-    <script src="js/state-manager.js"></script>
-    <script src="js/theme-manager.js"></script>
-    <script src="js/components/list-component.js"></script>
-    <script src="js/app.js"></script>
 </head>
 
 <body>
-    <!-- Header -->
     <header class="header">
         <div class="container">
             <h1><i class="fab fa-whatsapp"></i> WhatsApp Batch Manager</h1>
@@ -33,7 +24,6 @@
         </div>
     </header>
 
-    <!-- Login Section -->
     <section id="loginSection" class="section active">
         <div class="container">
             <div class="login-card">
@@ -78,10 +68,8 @@
         </div>
     </section>
 
-    <!-- Dashboard Section -->
     <section id="dashboardSection" class="section">
         <div class="container">
-            <!-- Sidebar -->
             <div class="sidebar">
                 <div class="user-info">
                     <h3 id="userName"></h3>
@@ -98,12 +86,13 @@
                     <button class="nav-btn" data-section="batchesSection">
                         <i class="fas fa-paper-plane"></i> Envios em Lote
                     </button>
+                    <a href="media-batches.html" class="nav-btn">
+                        <i class="fas fa-photo-video"></i> Envios de Mídia
+                    </a>
                 </nav>
             </div>
 
-            <!-- Main Content -->
             <div class="main-content">
-                <!-- Contact Groups Section -->
                 <div id="contactGroupsSection" class="content-section active">
                     <div class="section-header">
                         <h2><i class="fas fa-users"></i> Grupos de Contatos</h2>
@@ -111,15 +100,11 @@
                             <i class="fas fa-plus"></i> Novo Grupo
                         </button>
                     </div>
-
                     <div class="card">
-                        <div id="groupsList" class="list-container">
-                            <!-- Grupos serão carregados aqui -->
-                        </div>
+                        <div id="groupsList" class="list-container"></div>
                     </div>
                 </div>
 
-                <!-- WhatsApp Section -->
                 <div id="whatsappSection" class="content-section">
                     <div class="section-header">
                         <h2><i class="fab fa-whatsapp"></i> Instâncias WhatsApp</h2>
@@ -127,15 +112,11 @@
                             <i class="fas fa-plus"></i> Nova Instância
                         </button>
                     </div>
-
                     <div class="card">
-                        <div id="instancesList" class="list-container">
-                            <!-- Instâncias serão carregadas aqui -->
-                        </div>
+                        <div id="instancesList" class="list-container"></div>
                     </div>
                 </div>
 
-                <!-- Batches Section -->
                 <div id="batchesSection" class="content-section">
                     <div class="section-header">
                         <h2><i class="fas fa-paper-plane"></i> Envios em Lote</h2>
@@ -143,102 +124,26 @@
                             <i class="fas fa-plus"></i> Novo Envio
                         </button>
                     </div>
-
                     <div class="card">
-                        <div id="batchesList" class="list-container">
-                            <!-- Lotes serão carregados aqui -->
-                        </div>
+                        <div id="batchesList" class="list-container"></div>
                     </div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Modals -->
-    <div id="groupModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h3 id="modalTitle">Novo Grupo de Contatos</h3>
-            <form id="groupForm">
-                <div class="form-group">
-                    <label for="groupName">Nome do Grupo:</label>
-                    <input type="text" id="groupName" required>
-                </div>
-                <div class="form-group">
-                    <label for="groupDescription">Descrição:</label>
-                    <textarea id="groupDescription" rows="3"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Contatos:</label>
-                    <div id="contactsContainer">
-                        <!-- Contatos dinâmicos -->
-                    </div>
-                    <button type="button" class="btn btn-secondary" id="addContactBtn">
-                        <i class="fas fa-plus"></i> Adicionar Contato
-                    </button>
-                </div>
-                <button type="submit" class="btn btn-primary">Salvar Grupo</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Loading Spinner -->
-    <div id="loading" class="loading" style="display: none;">
-        <div class="spinner"></div>
-    </div>
-
-    <!-- Notification System -->
+    <div id="groupModal" class="modal"> </div>
+    <div id="instanceModal" class="modal"> </div>
+    <div id="qrcodeModal" class="modal"> </div>
+    <div id="groupsModal" class="modal"> </div>
+    
+    <div id="loading" class="loading" style="display: none;"><div class="spinner"></div></div>
     <div id="notification" class="notification"></div>
 
-    <!-- Instance Modal -->
-    <div id="instanceModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h3 id="instanceModalTitle">Nova Instância WhatsApp</h3>
-            <form id="instanceForm">
-                <div class="form-group">
-                    <label for="instanceName">Nome da Instância:</label>
-                    <input type="text" id="instanceName" placeholder="Ex: WhatsApp Negócios" required>
-                </div>
-                <button type="submit" class="btn btn-primary">Criar Instância</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- QR Code Modal -->
-    <div id="qrcodeModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h3>Conectar WhatsApp</h3>
-            <p>Escaneie o QR Code com o WhatsApp:</p>
-            <ol>
-                <li>Abra o WhatsApp no seu celular</li>
-                <li>Toque em <strong>Configurações</strong> → <strong>Dispositivos conectados</strong> →
-                    <strong>Conectar um dispositivo</strong></li>
-                <li>Aponte a câmera para o QR Code abaixo</li>
-            </ol>
-            <div style="text-align: center; margin: 20px 0;">
-                <img id="qrcodeImage" src="" alt="QR Code" style="max-width: 300px;">
-            </div>
-            <p style="text-align: center; color: #666;">Aguardando conexão...</p>
-        </div>
-    </div>
-
-    <!-- Groups Modal -->
-    <div id="groupsModal" class="modal">
-        <div class="modal-content">
-            <span class="close">&times;</span>
-            <h3>Grupos do WhatsApp</h3>
-            <div id="whatsappGroupsList" class="groups-list">
-                <!-- Grupos serão carregados aqui -->
-            </div>
-        </div>
-    </div>
-
-    <!-- <script src="js/auth.js"></script>
-    <script src="js/contactGroups.js"></script>
-    <script src="js/whatsapp.js"></script>
-    <script src="js/batches.js"></script> -->
+    <script src="js/security.js"></script>
+    <script src="js/state-manager.js"></script>
+    <script src="js/theme-manager.js"></script>
+    <script src="js/components/list-component.js"></script>
     <script src="js/app.js"></script>
 </body>
 

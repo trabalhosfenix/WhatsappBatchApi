@@ -867,3 +867,62 @@ html, body {
     overflow: visible;
     height: auto;
 }
+
+/* Adicione ao style.css */
+.checkbox-group {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    background: #fff;
+}
+
+.checkbox-item {
+    margin-bottom: 8px;
+    padding: 5px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.checkbox-item:hover {
+    background-color: #f5f5f5;
+}
+
+.checkbox-item input[type="checkbox"]:disabled + span {
+    color: #999;
+    font-style: italic;
+}
+
+.file-upload-area {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    padding: 30px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background-color: #fafafa;
+}
+
+.file-upload-area:hover {
+    border-color: #007bff;
+    background-color: #f0f8ff;
+}
+
+.file-upload-area i {
+    font-size: 48px;
+    color: #ccc;
+    margin-bottom: 10px;
+    display: block;
+}
+
+.loading-text, .error-text, .no-groups {
+    text-align: center;
+    padding: 20px;
+    color: #6c757d;
+    font-style: italic;
+}
+
+.error-text {
+    color: #dc3545;
+}
