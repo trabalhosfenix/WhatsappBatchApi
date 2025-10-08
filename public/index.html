@@ -132,12 +132,100 @@
         </div>
     </section>
 
-    <div id="groupModal" class="modal"> </div>
-    <div id="instanceModal" class="modal"> </div>
-    <div id="qrcodeModal" class="modal"> </div>
-    <div id="groupsModal" class="modal"> </div>
-    
-    <div id="loading" class="loading" style="display: none;"><div class="spinner"></div></div>
+    <!-- Group Modal -->
+    <div id="groupModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3 id="modalTitle">Novo Grupo</h3>
+            <form id="groupForm">
+                <div class="form-group">
+                    <label for="groupName">Nome do Grupo:</label>
+                    <input type="text" id="groupName" required>
+                </div>
+                <div class="form-group">
+                    <label for="groupDescription">Descrição:</label>
+                    <textarea id="groupDescription" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Contatos:</label>
+                    <div id="contactsContainer">
+                        <!-- Contact fields will be added here dynamically -->
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="addContactBtn">
+                        <i class="fas fa-plus"></i> Adicionar Contato
+                    </button>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary"
+                        onclick="app.contactGroups.closeGroupModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Grupo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Instance Modal -->
+    <div id="instanceModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3 id="instanceModalTitle">Nova Instância WhatsApp</h3>
+            <form id="instanceForm">
+                <div class="form-group">
+                    <label for="instanceName">Nome da Instância:</label>
+                    <input type="text" id="instanceName" placeholder="Ex: WhatsApp Pessoal" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary"
+                        onclick="app.whatsappManager.closeInstanceModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Criar Instância</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- QR Code Modal -->
+    <div id="qrcodeModal" class="modal">
+        <div class="modal-content" style="text-align: center; max-width: 400px;">
+            <span class="close">&times;</span>
+            <h3>Conectar WhatsApp</h3>
+            <p>Escaneie o QR Code abaixo com seu WhatsApp</p>
+            <div class="qrcode-container">
+                <img id="qrcodeImage" src="" alt="QR Code" style="max-width: 300px; border: 1px solid #ddd;">
+            </div>
+            <div class="modal-info">
+                <p><strong>Como escanear:</strong></p>
+                <ol style="text-align: left; display: inline-block;">
+                    <li>Abra o WhatsApp no seu celular</li>
+                    <li>Toque em <strong>Menu → Linked Devices</strong></li>
+                    <li>Toque em <strong>Link a Device</strong></li>
+                    <li>Aponte a câmera para o QR Code acima</li>
+                </ol>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary"
+                    onclick="app.whatsappManager.closeQRCodeModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Groups Modal -->
+    <div id="groupsModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close">&times;</span>
+            <h3>Grupos do WhatsApp</h3>
+            <div id="whatsappGroupsList" class="groups-list">
+                <!-- Groups will be loaded here -->
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary"
+                    onclick="app.whatsappManager.closeGroupsModal()">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loading" class="loading" style="display: none;">
+        <div class="spinner"></div>
+    </div>
     <div id="notification" class="notification"></div>
 
     <script src="js/security.js"></script>

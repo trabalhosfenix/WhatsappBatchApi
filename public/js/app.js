@@ -31,7 +31,7 @@ class Auth {
 
         try {
             this.showLoading();
-            
+
             // Use state manager for pending requests
             const requestId = `login_${Date.now()}`;
             stateManager.state.pendingRequests.set(requestId, true);
@@ -49,14 +49,14 @@ class Auth {
             if (data.success) {
                 this.token = data.token;
                 this.user = SecurityManager.sanitizeObject(data.user);
-                
+
                 localStorage.setItem('authToken', this.token);
                 localStorage.setItem('user', JSON.stringify(this.user));
-                
+
                 // Update state manager
                 stateManager.setState('user', this.user);
                 stateManager.state.pendingRequests.delete(requestId);
-                
+
                 this.showNotification('Login realizado com sucesso!', 'success');
             } else {
                 throw new Error(data.error || 'Erro no login');
@@ -68,7 +68,7 @@ class Auth {
         }
     }
 
-    
+
 
     setupEventListeners() {
         // Login form
@@ -590,20 +590,69 @@ class ContactGroups {
 }
 
 // ===== WHATSAPP MANAGER CLASS =====
+// ===== WHATSAPP MANAGER CLASS =====
 class WhatsAppManager {
-    constructor() {
-        this.currentInstance = null;
-        this.qrCodeInterval = null;
+    constructor(authManager = null) {
+        // Injeção de dependência
+        this.auth = authManager || (typeof authInstance !== 'undefined' ? authInstance : null);
+
+        // Estado centralizado
+        this.state = {
+            currentInstance: null,
+            instances: [],
+            qrCodeCheck: {
+                interval: null,
+                instanceId: null,
+                attempts: 0,
+                maxAttempts: 60 // 3 minutos (60 * 3s)
+            },
+            cache: {
+                instances: null,
+                lastUpdated: null,
+                cacheTimeout: 5 * 60 * 1000 // 5 minutos
+            }
+        };
+
+        // Event system para desacoplamento
+        this.eventHandlers = {};
+    }
+
+    // Sistema de eventos para melhor comunicação
+    on(event, handler) {
+        if (!this.eventHandlers[event]) {
+            this.eventHandlers[event] = [];
+        }
+        this.eventHandlers[event].push(handler);
+    }
+
+    off(event, handler) {
+        if (this.eventHandlers[event]) {
+            this.eventHandlers[event] = this.eventHandlers[event].filter(h => h !== handler);
+        }
+    }
+
+    emit(event, data) {
+        if (this.eventHandlers[event]) {
+            this.eventHandlers[event].forEach(handler => {
+                try {
+                    handler(data);
+                } catch (error) {
+                    console.error(`Error in event handler for ${event}:`, error);
+                }
+            });
+        }
     }
 
     init() {
         this.setupEventListeners();
+        this.setupGlobalEventHandlers();
     }
 
     setupEventListeners() {
         // Add instance button
         const addInstanceBtn = document.getElementById('addInstanceBtn');
         if (addInstanceBtn) {
+            console.log('Add Instance button found');
             addInstanceBtn.addEventListener('click', () => {
                 this.openInstanceModal();
             });
@@ -630,33 +679,80 @@ class WhatsAppManager {
         });
     }
 
-    async loadInstances() {
+    setupGlobalEventHandlers() {
+        // Fechar modais ao clicar fora
+        window.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.style.display = 'none';
+                if (e.target.id === 'qrcodeModal') {
+                    this.stopQRCodeCheck();
+                }
+            }
+        });
+
+        // Tecla ESC para fechar modais
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeAllModals();
+            }
+        });
+    }
+
+    closeAllModals() {
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.style.display = 'none';
+        });
+        this.stopQRCodeCheck();
+    }
+
+    async loadInstances(forceRefresh = false) {
         try {
-            if (!authInstance) {
-                console.error('Auth instance not available');
+            if (!this.auth) {
+                console.error('Auth manager not available');
+                this.emit('error', new Error('Auth manager not available'));
                 return;
             }
 
-            authInstance.showLoading();
+            // Verificar cache
+            const now = Date.now();
+            if (!forceRefresh &&
+                this.state.cache.instances &&
+                this.state.cache.lastUpdated &&
+                (now - this.state.cache.lastUpdated) < this.state.cache.cacheTimeout) {
+                console.log('Using cached instances');
+                this.renderInstances(this.state.cache.instances);
+                return;
+            }
+
+            this.auth.showLoading();
             const response = await fetch('/api/whatsapp/instances', {
-                headers: authInstance.getAuthHeaders()
+                headers: this.auth.getAuthHeaders()
             });
 
             const data = await response.json();
 
             if (data.success) {
+                // Atualizar cache
+                this.state.cache.instances = data.instances;
+                this.state.cache.lastUpdated = Date.now();
+
+                this.state.instances = data.instances;
                 this.renderInstances(data.instances);
+                this.emit('instancesLoaded', data.instances);
             } else {
                 throw new Error(data.error || 'Erro ao carregar instâncias');
             }
         } catch (error) {
-            if (authInstance) {
-                authInstance.showNotification(error.message, 'error');
+            console.error('Error loading instances:', error);
+            this.emit('error', error);
+
+            if (this.auth) {
+                this.auth.showNotification(error.message, 'error');
             }
             this.renderInstances([]);
         } finally {
-            if (authInstance) {
-                authInstance.hideLoading();
+            if (this.auth) {
+                this.auth.hideLoading();
             }
         }
     }
@@ -677,7 +773,7 @@ class WhatsAppManager {
         }
 
         container.innerHTML = instances.map(instance => `
-            <div class="list-item">
+            <div class="list-item" data-instance-id="${instance._id}">
                 <div class="list-item-info">
                     <h4>${instance.sessionName}</h4>
                     <p>
@@ -717,6 +813,8 @@ class WhatsAppManager {
                 </div>
             </div>
         `).join('');
+
+        this.emit('instancesRendered', instances);
     }
 
     getStatusText(status) {
@@ -734,11 +832,18 @@ class WhatsAppManager {
     }
 
     openInstanceModal(instance = null) {
-        this.currentInstance = instance;
+        console.log('openInstanceModal called', { instance });
+
+        this.state.currentInstance = instance;
         const modal = document.getElementById('instanceModal');
         const title = document.getElementById('instanceModalTitle');
 
-        if (!modal || !title) return;
+        console.log('Modal elements:', { modal, title });
+
+        if (!modal || !title) {
+            console.error('Modal elements not found!');
+            return;
+        }
 
         if (instance) {
             title.textContent = 'Editar Instância';
@@ -749,6 +854,9 @@ class WhatsAppManager {
         }
 
         modal.style.display = 'block';
+        console.log('Modal should be visible now');
+
+        this.emit('modalOpened', { type: 'instance', instance });
     }
 
     closeInstanceModal() {
@@ -756,7 +864,8 @@ class WhatsAppManager {
         if (modal) {
             modal.style.display = 'none';
         }
-        this.currentInstance = null;
+        this.state.currentInstance = null;
+        this.emit('modalClosed', { type: 'instance' });
     }
 
     populateInstanceForm(instance) {
@@ -774,39 +883,50 @@ class WhatsAppManager {
     }
 
     async saveInstance() {
+        console.log('saveInstance called');
+
         const nameInput = document.getElementById('instanceName');
-        if (!nameInput || !authInstance) {
-            console.error('Auth instance or input not available');
+        if (!nameInput || !this.auth) {
+            console.error('Auth manager or input not available', {
+                hasNameInput: !!nameInput,
+                hasAuth: !!this.auth
+            });
             return;
         }
 
         const sessionName = nameInput.value.trim();
+        console.log('Session name:', sessionName);
 
         if (!sessionName) {
-            authInstance.showNotification('Nome da instância é obrigatório', 'warning');
+            this.showNotification('Nome da instância é obrigatório', 'warning');
             return;
         }
 
         try {
-            authInstance.showLoading();
+            this.showLoading();
 
             const response = await fetch('/api/whatsapp/instances', {
                 method: 'POST',
-                headers: authInstance.getAuthHeaders(),
+                headers: this.getAuthHeaders(),
                 body: JSON.stringify({ sessionName })
             });
 
             const data = await response.json();
-
-            console.log('Resposta da API WhatsApp:', data);
+            console.log('API response:', data);
 
             if (data.success) {
-                authInstance.showNotification(
+                this.showNotification(
                     data.message || 'Instância criada com sucesso!',
                     'success'
                 );
+
+                this.state.cache.instances = null;
+                this.state.cache.lastUpdated = null;
+
                 this.closeInstanceModal();
-                this.loadInstances();
+                this.loadInstances(true);
+
+                this.emit('instanceCreated', data.instance);
 
                 if (data.instance && data.instance._id) {
                     console.log('Instância criada com ID:', data.instance._id);
@@ -820,32 +940,35 @@ class WhatsAppManager {
             }
         } catch (error) {
             console.error('Erro ao salvar instância:', error);
-            authInstance.showNotification(error.message, 'error');
+            this.emit('error', error);
+            this.showNotification(error.message, 'error');
         } finally {
-            authInstance.hideLoading();
+            this.hideLoading();
         }
     }
 
     async showQRCode(instanceId) {
         try {
-            if (!authInstance) return;
+            if (!this.auth) return;
 
-            authInstance.showLoading();
+            this.auth.showLoading();
             const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
-                headers: authInstance.getAuthHeaders()
+                headers: this.auth.getAuthHeaders()
             });
 
             const data = await response.json();
 
             if (data.success && data.qrCode) {
                 this.openQRCodeModal(instanceId, data.qrCode);
+                this.emit('qrcodeShown', { instanceId, qrCode: data.qrCode });
             } else {
                 throw new Error(data.error || 'QR Code não disponível');
             }
         } catch (error) {
-            authInstance.showNotification(error.message, 'error');
+            this.emit('error', error);
+            this.auth.showNotification(error.message, 'error');
         } finally {
-            authInstance.hideLoading();
+            this.auth.hideLoading();
         }
     }
 
@@ -854,7 +977,7 @@ class WhatsAppManager {
         const qrImage = document.getElementById('qrcodeImage');
 
         if (!modal || !qrImage) {
-            authInstance.showNotification('Elementos do modal de QR Code não encontrados', 'error');
+            this.auth.showNotification('Elementos do modal de QR Code não encontrados', 'error');
             return;
         }
 
@@ -864,6 +987,7 @@ class WhatsAppManager {
         modal.style.display = 'block';
 
         this.startQRCodeCheck(instanceId);
+        this.emit('modalOpened', { type: 'qrcode', instanceId });
     }
 
     closeQRCodeModal() {
@@ -872,53 +996,84 @@ class WhatsAppManager {
             modal.style.display = 'none';
         }
         this.stopQRCodeCheck();
+        this.emit('modalClosed', { type: 'qrcode' });
     }
 
     startQRCodeCheck(instanceId) {
-        this.stopQRCodeCheck();
+        this.stopQRCodeCheck(); // Cleanup anterior
 
-        this.qrCodeInterval = setInterval(async () => {
+        this.state.qrCodeCheck.instanceId = instanceId;
+        this.state.qrCodeCheck.attempts = 0;
+
+        this.state.qrCodeCheck.interval = setInterval(async () => {
             try {
+                this.state.qrCodeCheck.attempts++;
+
                 const response = await fetch(`/api/whatsapp/instances/${instanceId}`, {
-                    headers: authInstance.getAuthHeaders()
+                    headers: this.auth.getAuthHeaders()
                 });
 
                 const data = await response.json();
 
-                if (data.success && data.instance && data.instance.status === 'connected') {
-                    authInstance.showNotification('WhatsApp conectado com sucesso!', 'success');
-                    this.closeQRCodeModal();
-                    this.loadInstances();
+                if (data.success && data.instance) {
+                    if (data.instance.status === 'connected') {
+                        this.auth.showNotification('WhatsApp conectado com sucesso!', 'success');
+                        this.closeQRCodeModal();
+
+                        // Invalidar cache
+                        this.state.cache.instances = null;
+                        this.state.cache.lastUpdated = null;
+
+                        this.loadInstances(true); // Force refresh
+                        this.emit('instanceConnected', data.instance);
+                    } else if (data.instance.status === 'failed') {
+                        this.auth.showNotification('Falha ao conectar WhatsApp', 'error');
+                        this.closeQRCodeModal();
+                        this.emit('connectionFailed', data.instance);
+                    }
                 }
+
+                // Timeout após máximo de tentativas
+                if (this.state.qrCodeCheck.attempts >= this.state.qrCodeCheck.maxAttempts) {
+                    this.stopQRCodeCheck();
+                    this.auth.showNotification('Tempo esgotado para escanear QR Code', 'warning');
+                    this.emit('qrcodeTimeout', { instanceId, attempts: this.state.qrCodeCheck.attempts });
+                }
+
             } catch (error) {
                 console.error('Erro ao verificar status:', error);
+                this.emit('error', error);
             }
         }, 3000);
     }
 
     stopQRCodeCheck() {
-        if (this.qrCodeInterval) {
-            clearInterval(this.qrCodeInterval);
-            this.qrCodeInterval = null;
+        if (this.state.qrCodeCheck.interval) {
+            clearInterval(this.state.qrCodeCheck.interval);
+            this.state.qrCodeCheck.interval = null;
+            this.state.qrCodeCheck.instanceId = null;
+            this.state.qrCodeCheck.attempts = 0;
         }
     }
 
     async loadGroups(instanceId) {
-        if (!confirm('Deseja carregar os grupos do WhatsApp? Isso pode levar alguns segundos.') || !authInstance) {
+        if (!confirm('Deseja carregar os grupos do WhatsApp? Isso pode levar alguns segundos.') || !this.auth) {
             return;
         }
 
         try {
-            authInstance.showLoading();
+            this.auth.showLoading();
             const response = await fetch(`/api/whatsapp/instances/${instanceId}/load-groups`, {
                 method: 'POST',
-                headers: authInstance.getAuthHeaders()
+                headers: this.auth.getAuthHeaders()
             });
 
             const data = await response.json();
 
             if (data.success) {
-                authInstance.showNotification(`${data.groupCount} grupos carregados com sucesso!`, 'success');
+                this.auth.showNotification(`${data.groupCount} grupos carregados com sucesso!`, 'success');
+                this.emit('groupsLoaded', { instanceId, groupCount: data.groupCount });
+
                 if (app && app.contactGroups) {
                     app.contactGroups.loadGroups();
                 }
@@ -926,32 +1081,35 @@ class WhatsAppManager {
                 throw new Error(data.error || 'Erro ao carregar grupos');
             }
         } catch (error) {
-            authInstance.showNotification(error.message, 'error');
+            this.emit('error', error);
+            this.auth.showNotification(error.message, 'error');
         } finally {
-            authInstance.hideLoading();
+            this.auth.hideLoading();
         }
     }
 
     async viewGroups(instanceId) {
         try {
-            if (!authInstance) return;
+            if (!this.auth) return;
 
-            authInstance.showLoading();
+            this.auth.showLoading();
             const response = await fetch(`/api/whatsapp/instances/${instanceId}/groups`, {
-                headers: authInstance.getAuthHeaders()
+                headers: this.auth.getAuthHeaders()
             });
 
             const data = await response.json();
 
             if (data.success) {
                 this.showGroupsModal(data.groups);
+                this.emit('groupsViewed', { instanceId, groups: data.groups });
             } else {
                 throw new Error(data.error || 'Erro ao carregar grupos');
             }
         } catch (error) {
-            authInstance.showNotification(error.message, 'error');
+            this.emit('error', error);
+            this.auth.showNotification(error.message, 'error');
         } finally {
-            authInstance.hideLoading();
+            this.auth.hideLoading();
         }
     }
 
@@ -960,7 +1118,7 @@ class WhatsAppManager {
         const container = document.getElementById('whatsappGroupsList');
 
         if (!modal || !container) {
-            authInstance.showNotification('Elementos do modal de grupos não encontrados', 'error');
+            this.auth.showNotification('Elementos do modal de grupos não encontrados', 'error');
             return;
         }
 
@@ -982,6 +1140,7 @@ class WhatsAppManager {
         }
 
         modal.style.display = 'block';
+        this.emit('modalOpened', { type: 'groups', groups });
     }
 
     closeGroupsModal() {
@@ -989,76 +1148,130 @@ class WhatsAppManager {
         if (modal) {
             modal.style.display = 'none';
         }
+        this.emit('modalClosed', { type: 'groups' });
     }
 
     async disconnectInstance(instanceId) {
-        if (!confirm('Tem certeza que deseja desconectar esta instância?') || !authInstance) {
+        if (!confirm('Tem certeza que deseja desconectar esta instância?') || !this.auth) {
             return;
         }
 
         try {
-            authInstance.showLoading();
+            this.auth.showLoading();
             const response = await fetch(`/api/whatsapp/instances/${instanceId}/disconnect`, {
                 method: 'PUT',
-                headers: authInstance.getAuthHeaders()
+                headers: this.auth.getAuthHeaders()
             });
 
             const data = await response.json();
 
             if (data.success) {
-                authInstance.showNotification('Instância desconectada com sucesso!', 'success');
-                this.loadInstances();
+                this.auth.showNotification('Instância desconectada com sucesso!', 'success');
+
+                // Invalidar cache
+                this.state.cache.instances = null;
+                this.state.cache.lastUpdated = null;
+
+                this.loadInstances(true); // Force refresh
+                this.emit('instanceDisconnected', { instanceId });
             } else {
                 throw new Error(data.error || 'Erro ao desconectar instância');
             }
         } catch (error) {
-            authInstance.showNotification(error.message, 'error');
+            this.emit('error', error);
+            this.auth.showNotification(error.message, 'error');
         } finally {
-            authInstance.hideLoading();
+            this.auth.hideLoading();
         }
     }
 
     async deleteInstance(instanceId) {
-        if (!confirm('Tem certeza que deseja excluir esta instância? Isso irá remover todas as credenciais e você precisará escanear o QR code novamente.') || !authInstance) {
+        if (!confirm('Tem certeza que deseja excluir esta instância? Isso irá remover todas as credenciais e você precisará escanear o QR code novamente.') || !this.auth) {
             return;
         }
 
         try {
-            authInstance.showLoading();
+            this.auth.showLoading();
 
-            // Obter o nome da sessão a partir do ID da instância
-            const instanceResponse = await fetch(`/api/whatsapp/instances/${instanceId}`, {
-                method: 'GET',
-                headers: authInstance.getAuthHeaders()
-            });
-
-            const instanceData = await instanceResponse.json();
-
-            if (!instanceData.success) {
-                throw new Error(instanceData.error || 'Erro ao obter dados da instância');
-            }
-
-            const sessionName = instanceData.instance.sessionName;
-
-            // Excluir a instância usando o nome da sessão
-            const response = await fetch(`/api/whatsapp/instances/${sessionName}`, {
+            // Excluir a instância usando o ID diretamente (corrigido)
+            const response = await fetch(`/api/whatsapp/instances/${instanceId}`, {
                 method: 'DELETE',
-                headers: authInstance.getAuthHeaders()
+                headers: this.auth.getAuthHeaders()
             });
 
             const data = await response.json();
 
             if (data.success) {
-                authInstance.showNotification('Instância excluída com sucesso! Você pode criar uma nova instância com o mesmo nome.', 'success');
-                this.loadInstances();
+                this.auth.showNotification('Instância excluída com sucesso! Você pode criar uma nova instância com o mesmo nome.', 'success');
+
+                // Invalidar cache
+                this.state.cache.instances = null;
+                this.state.cache.lastUpdated = null;
+
+                this.loadInstances(true); // Force refresh
+                this.emit('instanceDeleted', { instanceId });
             } else {
                 throw new Error(data.error || 'Erro ao excluir instância');
             }
         } catch (error) {
-            authInstance.showNotification(error.message, 'error');
+            this.emit('error', error);
+            this.auth.showNotification(error.message, 'error');
         } finally {
+            this.auth.hideLoading();
+        }
+    }
+
+    // Métodos utilitários para gerenciamento de estado
+    getInstance(instanceId) {
+        return this.state.instances.find(inst => inst._id === instanceId);
+    }
+
+    getConnectedInstances() {
+        return this.state.instances.filter(inst => inst.status === 'connected');
+    }
+
+    showNotification(message, type) {
+        if (this.auth && typeof this.auth.showNotification === 'function') {
+            this.auth.showNotification(message, type);
+        } else if (typeof authInstance !== 'undefined' && authInstance.showNotification) {
+            authInstance.showNotification(message, type);
+        } else {
+            // Fallback básico
+            alert(`${type.toUpperCase()}: ${message}`);
+        }
+    }
+
+    showLoading() {
+        if (this.auth && typeof this.auth.showLoading === 'function') {
+            this.auth.showLoading();
+        } else if (typeof authInstance !== 'undefined' && authInstance.showLoading) {
+            authInstance.showLoading();
+        }
+    }
+
+    hideLoading() {
+        if (this.auth && typeof this.auth.hideLoading === 'function') {
+            this.auth.hideLoading();
+        } else if (typeof authInstance !== 'undefined' && authInstance.hideLoading) {
             authInstance.hideLoading();
         }
+    }
+
+    getAuthHeaders() {
+        if (this.auth && typeof this.auth.getAuthHeaders === 'function') {
+            return this.auth.getAuthHeaders();
+        } else if (typeof authInstance !== 'undefined' && authInstance.getAuthHeaders) {
+            return authInstance.getAuthHeaders();
+        } else {
+            console.warn('No auth manager available for headers');
+            return {};
+        }
+    }
+
+    // Cleanup para evitar memory leaks
+    destroy() {
+        this.stopQRCodeCheck();
+        this.eventHandlers = {};
     }
 }
 
@@ -1645,6 +1858,10 @@ class App {
         // Initialize theme manager
         this.themeManager = new ThemeManager();
 
+        // Initialize Auth FIRST - porque outros módulos dependem dele
+        this.auth = new Auth();
+        console.log('Auth system initialized');
+
         // Initialize state manager subscriptions
         this.setupStateSubscriptions();
 
@@ -1703,18 +1920,38 @@ class App {
     }
 
     initializeModules() {
-        // Initialize Auth first
-        this.auth = new Auth();
+        console.log('Initializing modules...');
 
-        // Then initialize other modules
+        // Initialize ContactGroups
         this.contactGroups = new ContactGroups();
         this.contactGroups.init();
+        console.log('ContactGroups initialized');
 
-        this.whatsappManager = new WhatsAppManager();
+        // Initialize WhatsAppManager WITH auth dependency
+        this.whatsappManager = new WhatsAppManager(this.auth);
         this.whatsappManager.init();
+        console.log('WhatsApp Manager initialized with auth dependency');
 
+        // Initialize Batches
         this.batches = new Batches();
         this.batches.init();
+        console.log('Batches initialized');
+
+        // Teste rápido para verificar se o botão está funcionando
+        setTimeout(() => {
+            this.testWhatsAppManager();
+        }, 1000);
+    }
+
+    testWhatsAppManager() {
+        const addInstanceBtn = document.getElementById('addInstanceBtn');
+        if (addInstanceBtn) {
+            console.log('✅ Add Instance button found in DOM');
+            console.log('✅ WhatsAppManager instance:', this.whatsappManager);
+            console.log('✅ WhatsAppManager auth:', this.whatsappManager.auth);
+        } else {
+            console.warn('❌ Add Instance button not found in DOM');
+        }
     }
 
     setupNavigation() {
@@ -1745,42 +1982,74 @@ class App {
     }
 
     showSection(sectionId) {
+        console.log('Showing section:', sectionId);
+        
+        // Update navigation buttons
         document.querySelectorAll('.nav-btn').forEach(btn => {
             btn.classList.remove('active');
         });
 
         const activeBtn = document.querySelector(`[data-section="${sectionId}"]`);
-        if (activeBtn) activeBtn.classList.add('active');
+        if (activeBtn) {
+            activeBtn.classList.add('active');
+            console.log('Active nav button:', activeBtn);
+        }
 
+        // Update sections
         document.querySelectorAll('.content-section').forEach(section => {
             section.classList.remove('active');
         });
 
         const targetSection = document.getElementById(sectionId);
-        if (targetSection) targetSection.classList.add('active');
+        if (targetSection) {
+            targetSection.classList.add('active');
+            console.log('Active section:', targetSection);
+        } else {
+            console.warn('Section not found:', sectionId);
+        }
 
         this.currentSection = sectionId;
+        
+        // Load section data immediately
+        this.loadSectionData(sectionId);
     }
 
     loadSectionData(sectionId) {
+        console.log('Loading data for section:', sectionId);
+        
         switch (sectionId) {
             case 'contactGroupsSection':
                 if (this.contactGroups) {
+                    console.log('Loading contact groups...');
                     this.contactGroups.loadGroups();
                 }
                 break;
             case 'whatsappSection':
                 if (this.whatsappManager) {
+                    console.log('Loading WhatsApp instances...');
                     this.whatsappManager.loadInstances();
+                } else {
+                    console.warn('WhatsAppManager not available');
                 }
                 break;
             case 'batchesSection':
+                console.log('Batches section activated');
                 // To be implemented
                 break;
+            default:
+                console.log('Unknown section:', sectionId);
         }
     }
 
-
+    // Helper method para compatibilidade
+    showNotification(message, type) {
+        if (this.auth && typeof this.auth.showNotification === 'function') {
+            this.auth.showNotification(message, type);
+        } else {
+            // Fallback
+            console.log(`${type}: ${message}`);
+        }
+    }
 }
 
 // Global utility functions

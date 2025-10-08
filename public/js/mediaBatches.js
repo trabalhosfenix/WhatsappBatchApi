@@ -574,7 +574,7 @@ class MediaBatchesManager {
                 mediaItems: mediaItems,
                 contactGroupIds: selectedGroups.map(cb => cb.value),
                 whatsappInstanceId: instanceSelect.value,
-                caption: document.getElementById('mediaBatchCaption').value,
+                caption: batch.caption, // ← Usar caption do formulário,
                 options: {
                     delayBetweenMessages: parseInt(document.getElementById('mediaDelay').value) || 3000,
                     sendAsDocument: false

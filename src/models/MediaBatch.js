@@ -51,7 +51,8 @@ const mediaBatchSchema = new mongoose.Schema({
   },
   options: {
     delayBetweenMessages: { type: Number, default: 2000, min: 1000, max: 60000 },
-    sendAsDocument: { type: Boolean, default: false } // Forçar como documento
+    sendAsDocument: { type: Boolean, default: false },
+    caption: { type: String, default: '' } // ← CORREÇÃO: Adicionado campo caption
   },
   results: [{
     contact: String,

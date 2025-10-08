@@ -1,9 +1,248 @@
 const MediaBatch = require('../models/MediaBatch');
+const ContactGroup = require('../models/ContactGroup');
+const WhatsAppInstance = require('../models/WhatsAppInstance');
 const mediaService = require('../services/mediaService');
+const whatsappBaileysService = require('../services/whatsappService');
 
-exports.createMediaBatch = async (req, res) => {
+// ✅ CORREÇÃO: Adicionar função de processamento
+const processMediaBatch = async (batchId) => {
   try {
-    const { name, mediaItems, contactGroupIds, whatsappInstanceId, options } = req.body;
+    console.log(`🔄 Processando lote de mídia: ${batchId}`);
+
+    const batch = await MediaBatch.findById(batchId)
+      .populate('contactGroupIds')
+      .populate('whatsappInstanceId');
+
+    if (!batch) {
+      throw new Error('Lote de mídia não encontrado');
+    }
+
+    // ✅ DEBUG: VERIFICAR CAPTION NO BATCH DO BANCO
+    console.log('🔍 DEBUG - Caption no batch do banco:', {
+      batchCaption: batch.caption,
+      optionsCaption: batch.options?.caption,
+      fullOptions: batch.options
+    });
+
+    // ✅ CORREÇÃO: BUSCAR CAPTION CORRETAMENTE
+    const caption = batch.caption || batch.options?.caption || '';
+    console.log(`🖋️ Legenda final a ser usada: "${caption}"`);
+
+    // Verificar se a instância ainda existe e está conectada
+    if (!batch.whatsappInstanceId) {
+      throw new Error('Instância WhatsApp associada ao lote não encontrada');
+    }
+
+    const whatsappInstance = batch.whatsappInstanceId;
+
+    console.log(`🔍 Verificando instância: ${whatsappInstance.sessionName} (Status: ${whatsappInstance.status})`);
+
+    if (whatsappInstance.status !== 'connected') {
+      throw new Error(`Instância WhatsApp não está conectada. Status atual: ${whatsappInstance.status}`);
+    }
+
+    // Atualizar status para processando
+    await MediaBatch.findByIdAndUpdate(batchId, {
+      status: 'processing'
+    });
+
+    // OBTER SOCKET DIRETAMENTE - método mais confiável
+    let socket = whatsappBaileysService.sockets.get(whatsappInstance.sessionName);
+
+    if (!socket) {
+      console.log(`❌ Socket não encontrado para: ${whatsappInstance.sessionName}`);
+      console.log(`📋 Sockets ativos: ${Array.from(whatsappBaileysService.sockets.keys())}`);
+
+      try {
+        console.log(`🔄 Tentando reconectar instância: ${whatsappInstance.sessionName}`);
+        await whatsappBaileysService.reconnectInstance(
+          whatsappInstance.sessionName,
+          batch.userId
+        );
+
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        const reconnectedSocket = whatsappBaileysService.sockets.get(whatsappInstance.sessionName);
+        if (!reconnectedSocket) {
+          throw new Error('Falha na reconexão automática da instância');
+        }
+
+        console.log(`✅ Instância reconectada com sucesso`);
+        socket = reconnectedSocket;
+      } catch (reconnectError) {
+        throw new Error(`Instância não disponível e falha na reconexão: ${reconnectError.message}`);
+      }
+    }
+
+    if (!socket || !socket.user) {
+      console.log(`⚠️ Socket encontrado mas não está autenticado: ${whatsappInstance.sessionName}`);
+      try {
+        await whatsappBaileysService.recreateInstance(whatsappInstance.sessionName, batch.userId);
+        await new Promise(resolve => setTimeout(resolve, 8000));
+
+        socket = whatsappBaileysService.sockets.get(whatsappInstance.sessionName);
+        if (!socket || !socket.user) {
+          throw new Error(`Instância WhatsApp não está autenticada após tentativas: ${whatsappInstance.sessionName}`);
+        }
+      } catch (authError) {
+        throw new Error(`Falha na autenticação da instância: ${authError.message}`);
+      }
+    }
+
+    console.log(`✅ Socket válido encontrado para: ${whatsappInstance.sessionName}`);
+
+    // Coletar todos os contatos únicos dos grupos
+    const allContacts = [];
+    const contactMap = new Map();
+
+    for (const group of batch.contactGroupIds) {
+      const contactGroup = await ContactGroup.findById(group._id);
+      if (contactGroup && contactGroup.contacts) {
+        for (const contact of contactGroup.contacts) {
+          const contactKey = `${contact.phone}-${contact.whatsappId || contact.phone}`;
+          if (!contactMap.has(contactKey)) {
+            contactMap.set(contactKey, true);
+            allContacts.push({
+              ...contact.toObject(),
+              groupName: contactGroup.name
+            });
+          }
+        }
+      }
+    }
+
+    console.log(`📨 Enviando ${batch.mediaItems.length} mídia(s) para ${allContacts.length} contato(s)`);
+
+    let sentCount = 0;
+    let failedCount = 0;
+    const results = [];
+
+    // ✅ CORREÇÃO: Loop através de contatos E mídias
+    for (const contact of allContacts) {
+      for (const mediaItem of batch.mediaItems) {
+        try {
+          let jid;
+          if (contact.whatsappId && contact.whatsappId.includes('@')) {
+            jid = contact.whatsappId;
+          } else {
+            const phone = contact.phone.replace(/\D/g, '');
+            jid = `${phone}@s.whatsapp.net`;
+          }
+
+          console.log(`📤 Enviando ${mediaItem.originalName} para: ${contact.name} (${jid})`);
+
+          // ✅ CORREÇÃO CRÍTICA: PASSAR OPTIONS COM CAPTION CORRETO
+          const sendOptions = {
+            ...(batch.options || {}),
+            caption: caption // ← GARANTIR QUE O CAPTION VAI NAS OPTIONS
+          };
+
+          console.log('📦 Mídia:', {
+            originalName: mediaItem.originalName,
+            mimeType: mediaItem.mimeType,
+            url: mediaItem.url
+          });
+          console.log('📝 Opções:', sendOptions);
+          console.log('🖋️ Legenda:', `"${caption}"`);
+
+          // ✅ CORREÇÃO: Usar o método correto para enviar mídia
+          const mediaResult = await whatsappBaileysService.sendMediaToContact(
+            whatsappInstance.sessionName,
+            jid,
+            mediaItem,
+            caption, // ← PASSAR CAPTION DIRETAMENTE TAMBÉM
+            sendOptions // ← PASSAR OPTIONS COM CAPTION
+          );
+
+          sentCount++;
+          results.push({
+            contact: contact.name,
+            phone: contact.phone,
+            mediaItem: mediaItem.originalName,
+            group: contact.groupName,
+            status: 'sent',
+            messageId: mediaResult?.messageId,
+            timestamp: new Date(),
+            caption: caption // ← REGISTRAR QUAL CAPTION FOI ENVIADO
+          });
+
+          console.log(`✅ Mídia enviada para ${contact.name}`);
+
+          await MediaBatch.findByIdAndUpdate(batchId, {
+            'progress.sent': sentCount,
+            'progress.failed': failedCount
+          });
+
+          // Delay entre mensagens
+          if (batch.options?.delayBetweenMessages) {
+            await new Promise(resolve => setTimeout(resolve, batch.options.delayBetweenMessages));
+          }
+
+        } catch (error) {
+          console.error(`❌ Erro ao enviar mídia para ${contact.name}:`, error.message);
+
+          failedCount++;
+          results.push({
+            contact: contact.name,
+            phone: contact.phone,
+            mediaItem: mediaItem.originalName,
+            group: contact.groupName,
+            status: 'failed',
+            error: error.message,
+            timestamp: new Date()
+          });
+
+          await MediaBatch.findByIdAndUpdate(batchId, {
+            'progress.failed': failedCount
+          });
+        }
+      }
+    }
+
+    const finalStatus = failedCount === (allContacts.length * batch.mediaItems.length) ? 'failed' : 'completed';
+
+    await MediaBatch.findByIdAndUpdate(batchId, {
+      status: finalStatus,
+      'progress.sent': sentCount,
+      'progress.failed': failedCount,
+      results: results
+    });
+
+    console.log(`✅ Lote de mídia ${batch.name} finalizado: ${sentCount} enviados, ${failedCount} falhas`);
+
+  } catch (error) {
+    console.error(`❌ Erro no processamento do lote de mídia ${batchId}:`, error);
+
+    await MediaBatch.findByIdAndUpdate(batchId, {
+      status: 'failed',
+      $push: {
+        results: {
+          contact: 'Sistema',
+          phone: 'N/A',
+          mediaItem: 'Sistema',
+          group: 'Sistema',
+          status: 'failed',
+          error: error.message,
+          timestamp: new Date()
+        }
+      }
+    });
+  }
+};
+
+// ✅ CORREÇÃO: Exportar como funções nomeadas
+const createMediaBatch = async (req, res) => {
+  console.log('📦 Criando novo lote de mídia...');
+  console.log('Dados do lote:', req.body);
+
+  try {
+    const { name, mediaItems, contactGroupIds, whatsappInstanceId, caption, options } = req.body;
+
+    // ✅ DEBUG: VERIFICAR O QUE CHEGA DO FRONTEND
+    console.log('🔍 Dados recebidos do frontend:', {
+      captionRecebido: caption,
+      optionsRecebidas: options
+    });
 
     if (!name || !mediaItems || !contactGroupIds || !whatsappInstanceId) {
       return res.status(400).json({
@@ -12,14 +251,78 @@ exports.createMediaBatch = async (req, res) => {
       });
     }
 
-    const batch = await mediaService.createMediaBatch({
+    const whatsappInstance = await WhatsAppInstance.findOne({
+      _id: whatsappInstanceId,
+      userId: req.user._id
+    });
+
+    if (!whatsappInstance) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância WhatsApp não encontrada'
+      });
+    }
+
+    if (whatsappInstance.status !== 'connected') {
+      return res.status(400).json({
+        success: false,
+        error: 'Instância WhatsApp não está conectada'
+      });
+    }
+
+    const contactGroups = await ContactGroup.find({
+      _id: { $in: contactGroupIds },
+      userId: req.user._id
+    });
+
+    if (contactGroups.length !== contactGroupIds.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'Um ou mais grupos de contatos não foram encontrados'
+      });
+    }
+
+    const totalContacts = contactGroups.reduce((total, group) => total + group.contactCount, 0);
+    const totalSends = totalContacts * mediaItems.length;
+
+    if (totalContacts === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Os grupos selecionados não possuem contatos'
+      });
+    }
+
+    // ✅ CORREÇÃO CRÍTICA: GARANTIR QUE CAPTION VÁ PARA AS OPTIONS
+    const batchOptions = {
+      ...(options || {}),
+      caption: caption || options?.caption || '' // ← PRIORIDADE CORRETA
+    };
+
+    console.log('🔄 Opções finais do batch:', batchOptions);
+
+    const batch = await MediaBatch.create({
       userId: req.user._id,
       whatsappInstanceId,
       name,
       mediaItems,
       contactGroupIds,
-      options
+      caption: caption || '', // ← PRESERVAR NO BATCH TAMBÉM
+      progress: {
+        total: totalSends,
+        sent: 0,
+        failed: 0
+      },
+      options: batchOptions // ← USAR AS OPTIONS CORRIGIDAS
     });
+
+    console.log('✅ Batch criado no banco:', {
+      _id: batch._id,
+      caption: batch.caption,
+      options: batch.options
+    });
+
+    // Iniciar processamento
+    processMediaBatch(batch._id);
 
     res.status(201).json({
       success: true,
@@ -30,6 +333,10 @@ exports.createMediaBatch = async (req, res) => {
         status: batch.status,
         progress: batch.progress,
         mediaCount: batch.mediaItems.length,
+        totalContacts: totalContacts,
+        totalSends: totalSends,
+        caption: batch.caption, // ← INCLUIR CAPTION NA RESPOSTA
+        options: batch.options,
         createdAt: batch.createdAt
       }
     });
@@ -43,7 +350,7 @@ exports.createMediaBatch = async (req, res) => {
   }
 };
 
-exports.uploadMedia = async (req, res) => {
+const uploadMedia = async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
@@ -74,7 +381,44 @@ exports.uploadMedia = async (req, res) => {
   }
 };
 
-exports.getMediaBatches = async (req, res) => {
+const checkInstanceAvailability = async (req, res) => {
+  try {
+    const { instanceId } = req.params;
+
+    const instance = await WhatsAppInstance.findOne({
+      _id: instanceId,
+      userId: req.user._id
+    });
+
+    if (!instance) {
+      return res.json({
+        success: false,
+        available: false,
+        error: 'Instância não encontrada'
+      });
+    }
+
+    const socket = whatsappBaileysService.sockets.get(instance.sessionName);
+    const available = !!(socket && socket.user);
+
+    res.json({
+      success: true,
+      available,
+      status: instance.status,
+      sessionName: instance.sessionName,
+      phoneNumber: instance.phoneNumber
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao verificar instância:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+const getMediaBatches = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -120,7 +464,7 @@ exports.getMediaBatches = async (req, res) => {
   }
 };
 
-exports.getMediaBatch = async (req, res) => {
+const getMediaBatch = async (req, res) => {
   try {
     const batch = await MediaBatch.findOne({
       _id: req.params.id,
@@ -160,7 +504,7 @@ exports.getMediaBatch = async (req, res) => {
   }
 };
 
-exports.cancelMediaBatch = async (req, res) => {
+const cancelMediaBatch = async (req, res) => {
   try {
     const batch = await MediaBatch.findOneAndUpdate(
       {
@@ -207,4 +551,15 @@ exports.cancelMediaBatch = async (req, res) => {
       error: error.message
     });
   }
+};
+
+// ✅ CORREÇÃO: Exportar todas as funções
+module.exports = {
+  createMediaBatch,
+  uploadMedia,
+  checkInstanceAvailability,
+  getMediaBatches,
+  getMediaBatch,
+  cancelMediaBatch,
+  processMediaBatch
 };
