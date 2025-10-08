@@ -456,7 +456,8 @@ class MediaBatchesManager {
             }
 
             container.innerHTML = '<div class="loading-text">Carregando grupos...</div>';
-            const response = await this.safeApiRequest('GET', '/api/contact-groups');
+            const response = await this.safeApiRequest('GET', '/api/contact-groups?limit=100');
+          
             
             console.log('👥 Resposta completa dos grupos:', response);
             
@@ -848,22 +849,40 @@ class MediaBatchesManager {
     }
 
     async getContactGroups() {
-        try {
-            console.log('🔍 Buscando grupos de contatos...');
-            const response = await this.safeApiRequest('GET', '/api/contact-groups');
-            
-            console.log('👥 Resposta completa da API de grupos:', response);
-            
-            if (response.success && Array.isArray(response.contactGroups)) {
-                console.log(`✅ Encontrados ${response.contactGroups.length} grupos`);
-                return response.contactGroups;
+    try {
+        console.log('📡 Buscando TODOS os grupos de contatos (paginação automática)...');
+
+        let allGroups = [];
+        let currentPage = 1;
+        let totalPages = 1; // inicializa para entrar no loop
+
+        while (currentPage <= totalPages) {
+            const response = await this.safeApiRequest(
+                'GET',
+                `/api/contact-groups?page=${currentPage}&limit=100` // você pode ajustar o limit se a API permitir
+            );
+
+            if (response.success) {
+                const groups = response.contactGroups || [];
+                allGroups = allGroups.concat(groups);
+
+                // atualiza totalPages com base na resposta
+                totalPages = response.pages ?? 1;
+                console.log(`📃 Página ${currentPage}/${totalPages} carregada (${groups.length} grupos)`);
+
+                currentPage++;
             } else {
-                console.warn('⚠️ Nenhum grupo encontrado ou resposta inválida');
-                return [];
+                console.warn(`⚠️ Erro ao carregar página ${currentPage}, abortando...`);
+                break;
             }
-        } catch (error) {
-            console.error('❌ Erro ao buscar grupos:', error);
-            return [];
         }
+
+        console.log(`✅ Total de grupos carregados: ${allGroups.length}`);
+        return allGroups;
+    } catch (error) {
+        console.error('❌ Erro ao carregar todos os grupos:', error);
+        return [];
     }
+}
+
 }

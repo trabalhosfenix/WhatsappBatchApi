@@ -1424,68 +1424,55 @@ class Batches {
         return new Date(dateString).toLocaleDateString('pt-BR');
     }
 
-    async openBatchModal() {
-        try {
-            // Carregar apenas instâncias conectadas E com socket ativo
-            const [instancesResponse, groupsResponse] = await Promise.all([
-                fetch('/api/whatsapp/instances', {
-                    headers: authInstance.getAuthHeaders()
-                }),
-                fetch('/api/contact-groups?limit=100', {
-                    headers: authInstance.getAuthHeaders()
-                })
-            ]);
+   async openBatchModal() {
+    try {
+        const [instancesResponse, groupsResponse] = await Promise.all([
+            fetch('/api/whatsapp/instances', { headers: authInstance.getAuthHeaders() }),
+            fetch('/api/contact-groups?limit=100', { headers: authInstance.getAuthHeaders() })
+        ]);
 
-            const instancesData = await instancesResponse.json();
-            const groupsData = await groupsResponse.json();
+        const instancesData = await instancesResponse.json();
+        const groupsData = await groupsResponse.json();
 
-            if (!instancesData.success || !groupsData.success) {
-                throw new Error('Erro ao carregar dados para criar lote');
-            }
-
-            // Filtrar apenas instâncias conectadas
-            const connectedInstances = instancesData.instances.filter(inst =>
-                inst.status === 'connected'
-            );
-
-            // Verificar quais instâncias realmente têm socket ativo
-            const instancesWithSocket = await Promise.all(
-                connectedInstances.map(async (instance) => {
-                    try {
-                        const response = await fetch(`/api/whatsapp/instances/${instance._id}`, {
-                            headers: authInstance.getAuthHeaders()
-                        });
-                        const data = await response.json();
-                        return data.success ? instance : null;
-                    } catch (error) {
-                        return null;
-                    }
-                })
-            );
-
-            const availableInstances = instancesWithSocket.filter(inst => inst !== null);
-            const groups = groupsData.contactGroups || [];
-
-            if (availableInstances.length === 0) {
-                authInstance.showNotification(
-                    'Nenhuma instância WhatsApp conectada e disponível no momento. ' +
-                    'Verifique se a instância está online e tente novamente.',
-                    'warning'
-                );
-                return;
-            }
-
-            if (groups.length === 0) {
-                authInstance.showNotification('Nenhum grupo de contatos disponível', 'warning');
-                return;
-            }
-
-            this.showBatchModal(availableInstances, groups);
-
-        } catch (error) {
-            authInstance.showNotification(error.message, 'error');
+        if (!instancesData.success || !groupsData.success) {
+            throw new Error('Erro ao carregar dados para criar lote');
         }
+
+        const connectedInstances = (instancesData.instances || []).filter(i => i.status === 'connected');
+
+        const instancesWithSocket = await Promise.all(
+            connectedInstances.map(async (instance) => {
+                try {
+                    const res = await fetch(`/api/whatsapp/instances/${instance._id}`, {
+                        headers: authInstance.getAuthHeaders()
+                    });
+                    const data = await res.json();
+                    return data.success ? instance : null;
+                } catch {
+                    return null;
+                }
+            })
+        );
+
+        const availableInstances = instancesWithSocket.filter(Boolean);
+        const groups = groupsData.contactGroups || [];
+
+        if (availableInstances.length === 0) {
+            authInstance.showNotification('Nenhuma instância disponível.', 'warning');
+            return;
+        }
+
+        if (groups.length === 0) {
+            authInstance.showNotification('Nenhum grupo de contatos disponível.', 'warning');
+            return;
+        }
+
+        this.showBatchModal(availableInstances, groups);
+    } catch (error) {
+        authInstance.showNotification(error.message, 'error');
     }
+}
+
 
     showBatchModal(instances, groups) {
         // Criar modal dinamicamente se não existir
