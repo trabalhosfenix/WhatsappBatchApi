@@ -3,6 +3,8 @@ class MediaBatchesManager {
         this.app = app;
         this.uploadedFiles = [];
         this.currentModal = null;
+        this.currentPage = 1;
+        this.totalPages = 1;
         console.log('✅ MediaBatchesManager inicializado');
     }
 
@@ -23,6 +25,54 @@ class MediaBatchesManager {
 
         // Carregar lotes de mídia quando a página carregar
         this.loadMediaBatches();
+        
+        // Adicionar evento para paginação
+        this.setupPaginationEvents();
+        
+        // Adicionar event delegation para os botões dos batches
+        this.setupBatchEvents();
+    }
+
+    setupBatchEvents() {
+        // Usar event delegation para lidar com cliques nos batches
+        document.addEventListener('click', (e) => {
+            const target = e.target;
+            
+            // Encontrar o botão clicado ou seu pai
+            const button = target.closest('button');
+            if (!button) return;
+            
+            // Verificar se é um botão de ação do batch
+            const batchCard = button.closest('.batch-card');
+            if (!batchCard) return;
+            
+            const batchId = batchCard.dataset.batchId;
+            if (!batchId) return;
+            
+            // Determinar qual ação foi clicada
+            if (button.textContent.includes('Reutilizar') || button.querySelector('.fa-recycle')) {
+                e.preventDefault();
+                this.reuseBatch(batchId);
+            } else if (button.textContent.includes('Detalhes') || button.querySelector('.fa-eye')) {
+                e.preventDefault();
+                this.viewBatchDetails(batchId);
+            } else if (button.textContent.includes('Excluir') || button.querySelector('.fa-trash')) {
+                e.preventDefault();
+                this.deleteBatch(batchId);
+            } else if (button.textContent.includes('Cancelar') || button.querySelector('.fa-stop')) {
+                e.preventDefault();
+                this.cancelBatch(batchId);
+            }
+        });
+    }
+
+    setupPaginationEvents() {
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('page-btn')) {
+                const page = parseInt(e.target.dataset.page);
+                this.loadMediaBatches(page);
+            }
+        });
     }
 
     // Método seguro para chamadas API
@@ -133,7 +183,7 @@ class MediaBatchesManager {
         this.currentModal = null;
     }
 
-    async showMediaBatchModal() {
+    async showMediaBatchModal(batchData = null) {
         console.log('▶️ Iniciando showMediaBatchModal...');
 
         // Fecha qualquer modal anterior
@@ -160,22 +210,26 @@ class MediaBatchesManager {
         }
 
         console.log('✅ SUCESSO: Todas as condições foram atendidas. Criando o modal...');
-        this.createMediaBatchModal();
+        this.createMediaBatchModal(batchData);
     }
 
-    createMediaBatchModal() {
+    createMediaBatchModal(batchData = null) {
         console.log('🎨 Criando modal de envio de mídia...');
+        
+        const isEdit = batchData !== null;
+        const modalTitle = isEdit ? `Reutilizar Lote: ${batchData.name}` : 'Novo Envio de Mídia em Lote';
+        const buttonText = isEdit ? 'Reutilizar Lote' : 'Criar Lote de Mídia';
         
         const modalHTML = `
             <div id="mediaBatchModal" class="modal" style="display: block;">
                 <div class="modal-content" style="max-width: 800px;">
                     <span class="close" id="closeMediaBatchModal">&times;</span>
-                    <h3>Novo Envio de Mídia em Lote</h3>
+                    <h3>${modalTitle}</h3>
                     
                     <form id="mediaBatchForm">
                         <div class="form-group">
                             <label for="mediaBatchName">Nome do Lote:</label>
-                            <input type="text" id="mediaBatchName" placeholder="Ex: Campanha de Natal" required>
+                            <input type="text" id="mediaBatchName" placeholder="Ex: Campanha de Natal" value="${batchData ? batchData.name : ''}" required>
                         </div>
 
                         <div class="form-group">
@@ -201,11 +255,17 @@ class MediaBatchesManager {
                                 <input type="file" id="mediaFilesInput" accept="image/*,video/*,audio/*,application/pdf" style="display: none;" multiple>
                             </div>
                             <div id="filePreview" class="file-preview"></div>
+                            ${isEdit ? `
+                                <div class="existing-media-info">
+                                    <p><strong>Mídias existentes no lote:</strong> ${batchData.mediaCount || 0} arquivo(s)</p>
+                                    <small>Novos arquivos serão adicionados aos existentes</small>
+                                </div>
+                            ` : ''}
                         </div>
 
                         <div class="form-group">
                             <label for="mediaBatchCaption">Legenda (opcional):</label>
-                            <textarea id="mediaBatchCaption" rows="3" placeholder="Digite a mensagem que acompanhará a mídia..."></textarea>
+                            <textarea id="mediaBatchCaption" rows="3" placeholder="Digite a mensagem que acompanhará a mídia...">${batchData ? batchData.caption || '' : ''}</textarea>
                         </div>
 
                         <div class="form-group">
@@ -215,7 +275,7 @@ class MediaBatchesManager {
 
                         <div class="form-actions">
                             <button type="button" class="btn btn-secondary" id="cancelMediaBatchBtn">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">Criar Lote de Mídia</button>
+                            <button type="submit" class="btn btn-primary">${buttonText}</button>
                         </div>
                     </form>
                 </div>
@@ -225,9 +285,14 @@ class MediaBatchesManager {
         document.body.insertAdjacentHTML('beforeend', modalHTML);
         this.currentModal = 'mediaBatchModal';
 
+        // Se estiver editando, preservar dados do lote
+        if (isEdit) {
+            this.preservedBatchData = batchData;
+        }
+
         // Configurar eventos de fechamento
         this.setupModalEvents();
-        this.initMediaBatchForm();
+        this.initMediaBatchForm(batchData);
     }
 
     setupModalEvents() {
@@ -260,135 +325,20 @@ class MediaBatchesManager {
         });
     }
 
-    async initMediaBatchForm() {
+    async initMediaBatchForm(batchData = null) {
         console.log('📝 Inicializando formulário do modal...');
-        await this.loadInstancesToSelect();
-        await this.loadGroupsToSelect();
+        await this.loadInstancesToSelect(batchData);
+        await this.loadGroupsToSelect(batchData);
         this.initFileUpload();
         
         document.getElementById('mediaBatchForm').addEventListener('submit', (e) => {
             e.preventDefault();
             console.log('📤 Submetendo formulário...');
-            this.createMediaBatch();
+            this.createMediaBatch(batchData);
         });
     }
 
-    initFileUpload() {
-        const uploadArea = document.getElementById('mediaUploadArea');
-        const fileInput = document.getElementById('mediaFilesInput');
-        
-        if (!uploadArea || !fileInput) {
-            console.error('❌ Elementos de upload não encontrados');
-            return;
-        }
-
-        uploadArea.addEventListener('click', () => fileInput.click());
-        
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.style.backgroundColor = '#f0f8ff';
-            uploadArea.style.borderColor = '#007bff';
-        });
-        
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.style.backgroundColor = '';
-            uploadArea.style.borderColor = '';
-        });
-        
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.style.backgroundColor = '';
-            uploadArea.style.borderColor = '';
-            this.handleFiles(e.dataTransfer.files);
-        });
-        
-        fileInput.addEventListener('change', (e) => {
-            this.handleFiles(e.target.files);
-        });
-    }
-
-    handleFiles(files) {
-        if (!files || files.length === 0) return;
-
-        Array.from(files).forEach(file => {
-            // Validar tamanho do arquivo (50MB máximo)
-            if (file.size > 50 * 1024 * 1024) {
-                this.safeShowNotification(`❌ Arquivo muito grande: ${file.name} (máximo 50MB)`, 'error');
-                return;
-            }
-
-            // Validar tipo de arquivo
-            const allowedTypes = [
-                'image/jpeg', 'image/png', 'image/gif', 'image/webp', 
-                'video/mp4', 'video/avi', 'video/mkv', 'video/quicktime', 
-                'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 
-                'application/pdf'
-            ];
-            
-            if (!allowedTypes.includes(file.type)) {
-                this.safeShowNotification(`❌ Tipo de arquivo não suportado: ${file.name}`, 'error');
-                return;
-            }
-
-            // Adicionar arquivo à lista
-            this.uploadedFiles.push(file);
-            console.log(`✅ Arquivo adicionado: ${file.name}`);
-        });
-
-        this.updateFilesList();
-    }
-
-    updateFilesList() {
-        const filePreview = document.getElementById('filePreview');
-        if (!filePreview) return;
-
-        filePreview.innerHTML = '';
-
-        if (this.uploadedFiles.length === 0) {
-            return;
-        }
-
-        this.uploadedFiles.forEach((file, index) => {
-            const fileItem = document.createElement('div');
-            fileItem.className = 'file-item';
-            fileItem.innerHTML = `
-                <div class="file-info">
-                    <i class="fas ${this.getFileIcon(file.type)}"></i>
-                    <span>${file.name} (${this.formatFileSize(file.size)})</span>
-                </div>
-                <button type="button" class="btn btn-danger btn-sm" onclick="app.mediaBatchesManager.removeFile(${index})">
-                    <i class="fas fa-times"></i>
-                </button>
-            `;
-            filePreview.appendChild(fileItem);
-        });
-    }
-
-    removeFile(index) {
-        if (index >= 0 && index < this.uploadedFiles.length) {
-            const removedFile = this.uploadedFiles.splice(index, 1)[0];
-            console.log(`🗑️ Arquivo removido: ${removedFile.name}`);
-            this.updateFilesList();
-        }
-    }
-
-    getFileIcon(mimeType) {
-        if (mimeType.startsWith('image/')) return 'fa-image';
-        if (mimeType.startsWith('video/')) return 'fa-video';
-        if (mimeType.startsWith('audio/')) return 'fa-music';
-        if (mimeType === 'application/pdf') return 'fa-file-pdf';
-        return 'fa-file';
-    }
-
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    async loadInstancesToSelect() {
+    async loadInstancesToSelect(batchData = null) {
         try {
             const select = document.getElementById('mediaBatchInstance');
             if (!select) {
@@ -430,6 +380,12 @@ class MediaBatchesManager {
                                      instance.status || 'Desconhecido';
                     
                     option.textContent = `${instance.sessionName} (${phoneDisplay}) - ${statusText}`;
+                    
+                    // Selecionar instância do batch se estiver reutilizando
+                    if (batchData && batchData.whatsappInstance && batchData.whatsappInstance._id === instance._id) {
+                        option.selected = true;
+                    }
+                    
                     select.appendChild(option);
                 });
                 
@@ -447,7 +403,7 @@ class MediaBatchesManager {
         }
     }
 
-    async loadGroupsToSelect() {
+    async loadGroupsToSelect(batchData = null) {
         try {
             const container = document.getElementById('mediaBatchGroups');
             if (!container) {
@@ -458,7 +414,6 @@ class MediaBatchesManager {
             container.innerHTML = '<div class="loading-text">Carregando grupos...</div>';
             const response = await this.safeApiRequest('GET', '/api/contact-groups?limit=100');
           
-            
             console.log('👥 Resposta completa dos grupos:', response);
             
             if (response.success && Array.isArray(response.contactGroups)) {
@@ -477,9 +432,14 @@ class MediaBatchesManager {
                     const contactCount = group.contacts ? group.contacts.length : 0;
                     const isEmpty = contactCount === 0;
                     
+                    // Verificar se este grupo estava no batch original
+                    const isChecked = batchData && batchData.contactGroups ? 
+                        batchData.contactGroups.some(g => g._id === group._id) : false;
+                    
                     checkbox.innerHTML = `
                         <label>
-                            <input type="checkbox" name="contactGroups" value="${group._id}" ${isEmpty ? 'disabled' : ''}>
+                            <input type="checkbox" name="contactGroups" value="${group._id}" 
+                                ${isEmpty ? 'disabled' : ''} ${isChecked ? 'checked' : ''}>
                             <span class="${isEmpty ? 'empty-group' : ''}">
                                 ${group.name} (${contactCount} contatos)
                                 ${isEmpty ? ' - <em>vazio</em>' : ''}
@@ -513,12 +473,12 @@ class MediaBatchesManager {
         }
     }
 
-    async createMediaBatch() {
+    async createMediaBatch(existingBatchData = null) {
         try {
             this.safeShowLoading(true);
             
             // Validações
-            if (this.uploadedFiles.length === 0) {
+            if (this.uploadedFiles.length === 0 && !existingBatchData) {
                 this.safeShowNotification('❌ Selecione pelo menos um arquivo de mídia', 'error');
                 this.safeShowLoading(false);
                 return;
@@ -545,26 +505,39 @@ class MediaBatchesManager {
                 return;
             }
 
-            console.log('📤 Iniciando upload de arquivos...');
-            const mediaItems = [];
+            let mediaItems = [];
             
-            for (const file of this.uploadedFiles) {
-                const formData = new FormData();
-                formData.append('mediaFiles', file);
+            // Se estiver reutilizando um batch, usar as mídias existentes
+            if (existingBatchData) {
+                // Carregar detalhes completos do batch para obter mediaItems
+                const batchDetails = await this.safeApiRequest('GET', `/api/media/batches/${existingBatchData._id}`);
+                if (batchDetails.success && batchDetails.batch.mediaItems) {
+                    mediaItems = batchDetails.batch.mediaItems;
+                }
+            }
+
+            // Fazer upload de novos arquivos se houver
+            if (this.uploadedFiles.length > 0) {
+                console.log('📤 Iniciando upload de novos arquivos...');
                 
-                const uploadResponse = await this.safeApiRequest('POST', '/api/media/upload', formData, true);
-                
-                if (uploadResponse.success && uploadResponse.mediaItems) {
-                    mediaItems.push(...uploadResponse.mediaItems);
-                    console.log(`✅ Upload de ${file.name} concluído`);
-                } else {
-                    console.error(`❌ Falha no upload de ${file.name}:`, uploadResponse);
-                    throw new Error(`Falha no upload do arquivo: ${file.name}`);
+                for (const file of this.uploadedFiles) {
+                    const formData = new FormData();
+                    formData.append('mediaFiles', file);
+                    
+                    const uploadResponse = await this.safeApiRequest('POST', '/api/media/upload', formData, true);
+                    
+                    if (uploadResponse.success && uploadResponse.mediaItems) {
+                        mediaItems.push(...uploadResponse.mediaItems);
+                        console.log(`✅ Upload de ${file.name} concluído`);
+                    } else {
+                        console.error(`❌ Falha no upload de ${file.name}:`, uploadResponse);
+                        throw new Error(`Falha no upload do arquivo: ${file.name}`);
+                    }
                 }
             }
 
             if (mediaItems.length === 0) {
-                this.safeShowNotification('❌ Erro ao fazer upload dos arquivos', 'error');
+                this.safeShowNotification('❌ Nenhuma mídia disponível para envio', 'error');
                 this.safeShowLoading(false);
                 return;
             }
@@ -582,14 +555,23 @@ class MediaBatchesManager {
                 }
             };
 
+            // Se for reutilização, marcar como novo batch
+            if (existingBatchData) {
+                batchData.originalBatchId = existingBatchData._id;
+            }
+
             console.log('📋 Dados do lote:', batchData);
             const response = await this.safeApiRequest('POST', '/api/media/batches', batchData);
             
             if (response.success) {
-                this.safeShowNotification('✅ Lote de mídia criado com sucesso!', 'success');
+                const message = existingBatchData ? 
+                    '✅ Lote reutilizado com sucesso!' : 
+                    '✅ Lote de mídia criado com sucesso!';
+                this.safeShowNotification(message, 'success');
                 this.safeCloseModal('mediaBatchModal');
                 this.loadMediaBatches();
                 this.uploadedFiles = [];
+                this.preservedBatchData = null;
             } else {
                 throw new Error(response.error || 'Erro desconhecido ao criar lote');
             }
@@ -601,26 +583,34 @@ class MediaBatchesManager {
         }
     }
 
-    async loadMediaBatches() {
+    async loadMediaBatches(page = 1) {
         try {
             const container = document.getElementById('mediaBatchesList');
             if (!container) return;
 
             container.innerHTML = '<div class="loading-text">Carregando lotes de mídia...</div>';
-            const response = await this.safeApiRequest('GET', '/api/media/batches');
+            const response = await this.safeApiRequest('GET', `/api/media/batches?page=${page}&limit=10`);
             
             if (response.success && response.batches && response.batches.length > 0) {
+                this.currentPage = page;
+                this.totalPages = response.pagination?.pages || 1;
                 container.innerHTML = this.renderMediaBatchesList(response.batches);
+                this.renderPagination();
             } else {
                 container.innerHTML = `
                     <div class="empty-state">
                         <i class="fas fa-images"></i>
                         <p>Nenhum lote de mídia encontrado</p>
-                        <button class="btn btn-primary" onclick="app.mediaBatchesManager.showMediaBatchModal()">
+                        <button class="btn btn-primary" id="createFirstBatchBtn">
                             <i class="fas fa-plus"></i> Criar Primeiro Lote
                         </button>
                     </div>
                 `;
+                
+                // Adicionar evento ao botão de criar primeiro lote
+                document.getElementById('createFirstBatchBtn')?.addEventListener('click', () => {
+                    this.showMediaBatchModal();
+                });
             }
         } catch (error) {
             console.error('Erro ao carregar lotes de mídia:', error);
@@ -636,6 +626,39 @@ class MediaBatchesManager {
         }
     }
 
+    renderPagination() {
+        const container = document.getElementById('mediaBatchesList');
+        if (!container || this.totalPages <= 1) return;
+
+        let paginationHTML = '<div class="pagination">';
+        
+        // Botão anterior
+        if (this.currentPage > 1) {
+            paginationHTML += `<button class="page-btn btn btn-secondary" data-page="${this.currentPage - 1}">
+                <i class="fas fa-chevron-left"></i> Anterior
+            </button>`;
+        }
+        
+        // Páginas
+        for (let i = 1; i <= this.totalPages; i++) {
+            if (i === 1 || i === this.totalPages || (i >= this.currentPage - 2 && i <= this.currentPage + 2)) {
+                paginationHTML += `<button class="page-btn btn ${i === this.currentPage ? 'btn-primary' : 'btn-secondary'}" data-page="${i}">${i}</button>`;
+            } else if (i === this.currentPage - 3 || i === this.currentPage + 3) {
+                paginationHTML += '<span class="pagination-ellipsis">...</span>';
+            }
+        }
+        
+        // Botão próximo
+        if (this.currentPage < this.totalPages) {
+            paginationHTML += `<button class="page-btn btn btn-secondary" data-page="${this.currentPage + 1}">
+                Próximo <i class="fas fa-chevron-right"></i>
+            </button>`;
+        }
+        
+        paginationHTML += '</div>';
+        container.insertAdjacentHTML('beforeend', paginationHTML);
+    }
+
     renderMediaBatchesList(batches) {
         return `
             <div class="batches-grid">
@@ -648,15 +671,15 @@ class MediaBatchesManager {
                         <div class="batch-info">
                             <div class="info-item">
                                 <i class="fas fa-images"></i>
-                                <span>${batch.mediaItems ? batch.mediaItems.length : 0} mídia(s)</span>
+                                <span>${batch.mediaCount || 0} mídia(s)</span>
                             </div>
                             <div class="info-item">
                                 <i class="fas fa-users"></i>
-                                <span>${batch.contactGroupIds ? batch.contactGroupIds.length : 0} grupo(s)</span>
+                                <span>${batch.contactGroups ? batch.contactGroups.length : 0} grupo(s)</span>
                             </div>
                             <div class="info-item">
                                 <i class="fas fa-paper-plane"></i>
-                                <span>${batch.sent || 0}/${batch.total || 0} enviados</span>
+                                <span>${batch.sent || 0}/${batch.totalSends || 0} enviados</span>
                             </div>
                         </div>
                         <div class="batch-progress">
@@ -667,14 +690,17 @@ class MediaBatchesManager {
                         </div>
                         <div class="batch-actions">
                             ${batch.status === 'processing' ? `
-                                <button class="btn btn-warning btn-sm" onclick="app.mediaBatchesManager.cancelBatch('${batch._id}')">
+                                <button class="btn btn-warning btn-sm batch-action-btn" data-action="cancel">
                                     <i class="fas fa-stop"></i> Cancelar
                                 </button>
                             ` : ''}
-                            <button class="btn btn-info btn-sm" onclick="app.mediaBatchesManager.viewBatchDetails('${batch._id}')">
+                            <button class="btn btn-success btn-sm batch-action-btn" data-action="reuse">
+                                <i class="fas fa-recycle"></i> Reutilizar
+                            </button>
+                            <button class="btn btn-info btn-sm batch-action-btn" data-action="view">
                                 <i class="fas fa-eye"></i> Detalhes
                             </button>
-                            <button class="btn btn-danger btn-sm" onclick="app.mediaBatchesManager.deleteBatch('${batch._id}')">
+                            <button class="btn btn-danger btn-sm batch-action-btn" data-action="delete">
                                 <i class="fas fa-trash"></i> Excluir
                             </button>
                         </div>
@@ -696,7 +722,12 @@ class MediaBatchesManager {
     }
 
     calculateProgress(batch) {
-        const total = batch.total || 0;
+        // Usar progress.progress se existir, caso contrário calcular
+        if (batch.progress && typeof batch.progress.progress === 'number') {
+            return Math.round(batch.progress.progress);
+        }
+        
+        const total = batch.totalSends || 0;
         const sent = batch.sent || 0;
         
         if (total === 0) return 0;
@@ -711,7 +742,7 @@ class MediaBatchesManager {
             
             if (response.success) {
                 this.safeShowNotification('✅ Lote cancelado com sucesso', 'success');
-                this.loadMediaBatches();
+                this.loadMediaBatches(this.currentPage);
             } else {
                 throw new Error(response.error);
             }
@@ -729,12 +760,27 @@ class MediaBatchesManager {
             
             if (response.success) {
                 this.safeShowNotification('✅ Lote excluído com sucesso', 'success');
-                this.loadMediaBatches();
+                this.loadMediaBatches(this.currentPage);
             } else {
                 throw new Error(response.error);
             }
         } catch (error) {
             console.error('Erro ao excluir lote:', error);
+            this.safeShowNotification(`❌ Erro: ${error.message}`, 'error');
+        }
+    }
+
+    async reuseBatch(batchId) {
+        try {
+            const response = await this.safeApiRequest('GET', `/api/media/batches/${batchId}`);
+            
+            if (response.success) {
+                this.showMediaBatchModal(response.batch);
+            } else {
+                throw new Error(response.error);
+            }
+        } catch (error) {
+            console.error('Erro ao carregar batch para reutilização:', error);
             this.safeShowNotification(`❌ Erro: ${error.message}`, 'error');
         }
     }
@@ -770,15 +816,15 @@ class MediaBatchesManager {
                                 </div>
                                 <div class="detail-item">
                                     <strong>Progresso:</strong>
-                                    <span>${batch.sent || 0} / ${batch.total || 0}</span>
+                                    <span>${batch.sent || 0} / ${batch.totalSends || 0}</span>
                                 </div>
                                 <div class="detail-item">
                                     <strong>Mídias:</strong>
-                                    <span>${batch.mediaItems ? batch.mediaItems.length : 0} arquivo(s)</span>
+                                    <span>${batch.mediaCount || 0} arquivo(s)</span>
                                 </div>
                                 <div class="detail-item">
                                     <strong>Grupos:</strong>
-                                    <span>${batch.contactGroupIds ? batch.contactGroupIds.length : 0} grupo(s)</span>
+                                    <span>${batch.contactGroups ? batch.contactGroups.length : 0} grupo(s)</span>
                                 </div>
                                 <div class="detail-item">
                                     <strong>Criado em:</strong>
@@ -849,40 +895,146 @@ class MediaBatchesManager {
     }
 
     async getContactGroups() {
-    try {
-        console.log('📡 Buscando TODOS os grupos de contatos (paginação automática)...');
+        try {
+            console.log('📡 Buscando TODOS os grupos de contatos (paginação automática)...');
 
-        let allGroups = [];
-        let currentPage = 1;
-        let totalPages = 1; // inicializa para entrar no loop
+            let allGroups = [];
+            let currentPage = 1;
+            let totalPages = 1;
 
-        while (currentPage <= totalPages) {
-            const response = await this.safeApiRequest(
-                'GET',
-                `/api/contact-groups?page=${currentPage}&limit=100` // você pode ajustar o limit se a API permitir
-            );
+            while (currentPage <= totalPages) {
+                const response = await this.safeApiRequest(
+                    'GET',
+                    `/api/contact-groups?page=${currentPage}&limit=100`
+                );
 
-            if (response.success) {
-                const groups = response.contactGroups || [];
-                allGroups = allGroups.concat(groups);
+                if (response.success) {
+                    const groups = response.contactGroups || [];
+                    allGroups = allGroups.concat(groups);
 
-                // atualiza totalPages com base na resposta
-                totalPages = response.pages ?? 1;
-                console.log(`📃 Página ${currentPage}/${totalPages} carregada (${groups.length} grupos)`);
+                    totalPages = response.pages ?? 1;
+                    console.log(`📃 Página ${currentPage}/${totalPages} carregada (${groups.length} grupos)`);
 
-                currentPage++;
-            } else {
-                console.warn(`⚠️ Erro ao carregar página ${currentPage}, abortando...`);
-                break;
+                    currentPage++;
+                } else {
+                    console.warn(`⚠️ Erro ao carregar página ${currentPage}, abortando...`);
+                    break;
+                }
             }
+
+            console.log(`✅ Total de grupos carregados: ${allGroups.length}`);
+            return allGroups;
+        } catch (error) {
+            console.error('❌ Erro ao carregar todos os grupos:', error);
+            return [];
+        }
+    }
+
+    // Métodos para upload de arquivos (mantidos da versão anterior)
+    initFileUpload() {
+        const uploadArea = document.getElementById('mediaUploadArea');
+        const fileInput = document.getElementById('mediaFilesInput');
+        
+        if (!uploadArea || !fileInput) {
+            console.error('❌ Elementos de upload não encontrados');
+            return;
         }
 
-        console.log(`✅ Total de grupos carregados: ${allGroups.length}`);
-        return allGroups;
-    } catch (error) {
-        console.error('❌ Erro ao carregar todos os grupos:', error);
-        return [];
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.backgroundColor = '#f0f8ff';
+            uploadArea.style.borderColor = '#007bff';
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.style.backgroundColor = '';
+            uploadArea.style.borderColor = '';
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.style.backgroundColor = '';
+            uploadArea.style.borderColor = '';
+            
+            if (e.dataTransfer.files.length > 0) {
+                this.handleFiles(e.dataTransfer.files);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                this.handleFiles(e.target.files);
+            }
+        });
+    }
+
+    handleFiles(files) {
+        const preview = document.getElementById('filePreview');
+        if (!preview) return;
+        
+        preview.innerHTML = '';
+        
+        Array.from(files).forEach(file => {
+            if (this.isValidFileType(file)) {
+                this.uploadedFiles.push(file);
+                this.createFilePreview(file, preview);
+            } else {
+                this.safeShowNotification(`❌ Tipo de arquivo não suportado: ${file.name}`, 'error');
+            }
+        });
+    }
+
+    isValidFileType(file) {
+        const validTypes = [
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+            'video/mp4', 'video/avi', 'video/mkv', 'video/mov',
+            'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg',
+            'application/pdf'
+        ];
+        return validTypes.includes(file.type);
+    }
+
+    createFilePreview(file, container) {
+        const preview = document.createElement('div');
+        preview.className = 'file-preview-item';
+        
+        const fileIcon = this.getFileIcon(file.type);
+        const fileSize = this.formatFileSize(file.size);
+        
+        preview.innerHTML = `
+            <div class="file-info">
+                <i class="${fileIcon}"></i>
+                <div class="file-details">
+                    <div class="file-name">${file.name}</div>
+                    <div class="file-size">${fileSize}</div>
+                </div>
+                <button type="button" class="remove-file" onclick="this.closest('.file-preview-item').remove()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `;
+        
+        container.appendChild(preview);
+    }
+
+    getFileIcon(fileType) {
+        if (fileType.startsWith('image/')) return 'fas fa-file-image';
+        if (fileType.startsWith('video/')) return 'fas fa-file-video';
+        if (fileType.startsWith('audio/')) return 'fas fa-file-audio';
+        if (fileType === 'application/pdf') return 'fas fa-file-pdf';
+        return 'fas fa-file';
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 }
 
-}
+// Inicialização global para garantir que os métodos estejam disponíveis
+window.MediaBatchesManager = MediaBatchesManager;

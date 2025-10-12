@@ -254,7 +254,7 @@ exports.loadGroups = async (req, res) => {
         whatsappInstanceId: instance._id
       }
     );
-
+    
     console.log(`✅ ${groupCount} grupos carregados com sucesso`);
 
     res.json({

@@ -400,6 +400,9 @@ class WhatsAppService {
 
             console.log(`📊 [${sessionName}] Encontrados ${Object.keys(groups).length} grupos no WhatsApp`);
 
+
+          
+
             for (const [jid, group] of Object.entries(groups)) {
                 try {
                     const groupName = group.subject || 'Sem nome';
@@ -539,6 +542,7 @@ class WhatsAppService {
     }
 
     extractParticipantsAsContacts(participants) {
+     
         if (!participants || !Array.isArray(participants)) {
             return [];
         }
@@ -666,7 +670,7 @@ class WhatsAppService {
         console.log(`📝 Opções:`, options);
         console.log(`🖋️ Legenda:--->`, caption);
 
-        const finalCaption = options.caption;
+        const finalCaption = options.caption || caption || '';
 
 
         console.log(`📄 Detalhes da mídia:`, {

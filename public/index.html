@@ -86,7 +86,7 @@
                     <button class="nav-btn" data-section="batchesSection">
                         <i class="fas fa-paper-plane"></i> Envios em Lote
                     </button>
-                    <a href="media-batches.html" class="nav-btn">
+                    <a href="media-batches.html" class="nav-btn" style="width: auto;text-decoration: none;color: inherit;">
                         <i class="fas fa-photo-video"></i> Envios de Mídia
                     </a>
                 </nav>
@@ -101,6 +101,13 @@
                         </button>
                     </div>
                     <div class="card">
+                        <div class="card-header">
+                            <input type="text" id="searchInput" placeholder="Buscar grupos..." class="form-control">
+                            
+                            <button class="btn btn-secondary" id="loadMoreGroupsBtn" style="display: none;">
+                                <i class="fas fa-arrow-down"></i> Carregar Mais
+                            </button>
+                        </div>
                         <div id="groupsList" class="list-container"></div>
                     </div>
                 </div>
