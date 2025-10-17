@@ -194,7 +194,28 @@ const processBatch = async (batchId) => {
 };
 
 // ✅ CORREÇÃO: Exportar a função
-exports.processBatch = processBatch;
+exports.processBatch = async (batchId) => {
+  for (const contact of allContacts) {
+    // ✅ VERIFICAR RATE LIMIT ANTES DE ENVIAR
+    const limitCheck = await rateLimitService.checkLimit(
+      whatsappInstance._id, 
+      'message'
+    );
+    
+    if (!limitCheck.allowed) {
+      console.log(`⏳ Rate limit atingido, aguardando ${limitCheck.waitTime}ms`);
+      await new Promise(resolve => setTimeout(resolve, limitCheck.waitTime));
+    }
+    
+    // ✅ ENVIO COM PROTEÇÃO
+    await whatsappBaileysService.sendMessageToContact(
+      whatsappInstance.sessionName,
+      contact.jid,
+      batch.message
+    );
+    
+  }
+};
 
 exports.createBatch = async (req, res) => {
   try {

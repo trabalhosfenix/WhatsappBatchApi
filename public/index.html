@@ -77,6 +77,15 @@
                 </div>
 
                 <nav class="sidebar-nav">
+                    <!-- No seu arquivo HTML principal -->
+                    <button class="nav-btn" data-section="agendaSection">
+       
+          
+                        <a href="agenda.html" class="nav-link">
+                            <i class="fas fa-address-book"></i>
+                            Agenda de Contatos
+                        </a>
+                    </button>
                     <button class="nav-btn active" data-section="contactGroupsSection">
                         <i class="fas fa-users"></i> Grupos de Contatos
                     </button>
@@ -86,9 +95,13 @@
                     <button class="nav-btn" data-section="batchesSection">
                         <i class="fas fa-paper-plane"></i> Envios em Lote
                     </button>
-                    <a href="media-batches.html" class="nav-btn" style="width: auto;text-decoration: none;color: inherit;">
+                    <button class="nav-btn" data-section="mediaBatchesSection">
                         <i class="fas fa-photo-video"></i> Envios de Mídia
-                    </a>
+                        <a href="media-batches.html" class="nav-btn"
+                            style="width: auto;text-decoration: none;color: inherit;">
+                            <i class="fas fa-photo-video"></i> Envios de Mídia
+                        </a>
+                    </button>
                 </nav>
             </div>
 
@@ -103,7 +116,7 @@
                     <div class="card">
                         <div class="card-header">
                             <input type="text" id="searchInput" placeholder="Buscar grupos..." class="form-control">
-                            
+
                             <button class="btn btn-secondary" id="loadMoreGroupsBtn" style="display: none;">
                                 <i class="fas fa-arrow-down"></i> Carregar Mais
                             </button>
@@ -240,6 +253,7 @@
     <script src="js/theme-manager.js"></script>
     <script src="js/components/list-component.js"></script>
     <script src="js/app.js"></script>
+    <script src="js/agenda.js"></script>
 </body>
 
 </html>

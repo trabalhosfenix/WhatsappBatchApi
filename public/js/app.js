@@ -2059,6 +2059,11 @@ class App {
         this.contactGroups.init();
         console.log('ContactGroups initialized');
 
+        // // Initialize AgendaManager
+        // this.agendaManager = new AgendaManager(this.auth);
+        // this.agendaManager.init();
+        // console.log('AgendaManager initialized');
+
         // Initialize WhatsAppManager - garantir que auth está disponível
         if (this.auth) {
             this.whatsappManager = new WhatsAppManager(this.auth);
@@ -2066,6 +2071,7 @@ class App {
             console.log('WhatsApp Manager initialized with auth dependency');
         } else {
             console.error('Auth not available for WhatsAppManager initialization');
+
             // Tentar novamente após um delay
             setTimeout(() => {
                 if (this.auth) {

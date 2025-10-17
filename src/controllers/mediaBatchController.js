@@ -4,7 +4,100 @@ const WhatsAppInstance = require('../models/WhatsAppInstance');
 const mediaService = require('../services/mediaService');
 const whatsappBaileysService = require('../services/whatsappService');
 
-// ✅ CORREÇÃO: Adicionar função de processamento
+// ✅ SERVIÇO DE RATE LIMITING - IMPLEMENTAÇÃO CRÍTICA
+class RateLimitService {
+  constructor() {
+    this.limits = new Map(); // instanceId -> {messageCount, mediaCount, lastReset}
+  }
+
+  async checkRateLimit(instanceId, type = 'media') {
+    const now = Date.now();
+    const windowSize = 60000; // 1 minuto
+    
+    // Limites conservadores por tipo
+    const maxLimits = {
+      'message': 20,    // 20 mensagens/minuto
+      'media': 10,      // 10 mídias/minuto  
+      'group': 5        // 5 mensagens em grupo/minuto
+    };
+
+    const key = `${instanceId}-${type}`;
+    
+    // Inicializar ou resetar janela
+    if (!this.limits.has(key) || (now - this.limits.get(key).lastReset) > windowSize) {
+      this.limits.set(key, {
+        count: 0,
+        lastReset: now,
+        type: type
+      });
+    }
+
+    const limitData = this.limits.get(key);
+    
+    // Verificar se excedeu o limite
+    if (limitData.count >= maxLimits[type]) {
+      const waitTime = windowSize - (now - limitData.lastReset);
+      return {
+        allowed: false,
+        waitTime,
+        current: limitData.count,
+        max: maxLimits[type],
+        resetIn: Math.ceil(waitTime / 1000)
+      };
+    }
+
+    // Incrementar contador
+    limitData.count++;
+    
+    return {
+      allowed: true,
+      remaining: maxLimits[type] - limitData.count,
+      current: limitData.count,
+      max: maxLimits[type]
+    };
+  }
+
+  // Limpar limites antigos (prevenção de memory leak)
+  cleanupOldLimits() {
+    const now = Date.now();
+    const oneHour = 3600000;
+    
+    for (const [key, data] of this.limits.entries()) {
+      if (now - data.lastReset > oneHour) {
+        this.limits.delete(key);
+      }
+    }
+  }
+}
+
+// ✅ INSTÂNCIA GLOBAL DO RATE LIMITER
+const rateLimitService = new RateLimitService();
+
+// ✅ FUNÇÃO AUXILIAR PARA DELAY INTELIGENTE
+const smartDelay = async (instanceId, batchOptions) => {
+  const baseDelay = batchOptions?.delayBetweenMessages || 2000;
+  
+  // Verificar rate limit
+  const limitCheck = await rateLimitService.checkRateLimit(instanceId, 'media');
+  
+  if (!limitCheck.allowed) {
+    console.log(`⏳ Rate limit excedido! Aguardando ${limitCheck.resetIn}s...`);
+    await new Promise(resolve => setTimeout(resolve, limitCheck.waitTime + 1000));
+    
+    // Log de warning
+    console.warn(`🚨 RATE LIMIT: Instância ${instanceId} - ${limitCheck.current}/${limitCheck.max} mídias no último minuto`);
+    return true; // Indicar que houve delay por rate limit
+  }
+  
+  // Delay normal entre mensagens
+  if (baseDelay > 0) {
+    await new Promise(resolve => setTimeout(resolve, baseDelay));
+  }
+  
+  return false;
+};
+
+// ✅ FUNÇÃO DE PROCESSAMENTO COM RATE LIMITING
 const processMediaBatch = async (batchId) => {
   try {
     console.log(`🔄 Processando lote de mídia: ${batchId}`);
@@ -46,7 +139,7 @@ const processMediaBatch = async (batchId) => {
       status: 'processing'
     });
 
-    // OBTER SOCKET DIRETAMENTE - método mais confiável
+    // ✅ VERIFICAÇÃO ROBUSTA DA CONEXÃO
     let socket = whatsappBaileysService.sockets.get(whatsappInstance.sessionName);
 
     if (!socket) {
@@ -112,15 +205,23 @@ const processMediaBatch = async (batchId) => {
     }
 
     console.log(`📨 Enviando ${batch.mediaItems.length} mídia(s) para ${allContacts.length} contato(s)`);
+    console.log(`📊 Rate Limit configurado: Máximo 10 mídias/minuto por instância`);
 
     let sentCount = 0;
     let failedCount = 0;
     const results = [];
+    let rateLimitHits = 0;
 
-    // ✅ CORREÇÃO: Loop através de contatos E mídias
+    // ✅ LOOP COM RATE LIMITING IMPLEMENTADO
     for (const contact of allContacts) {
       for (const mediaItem of batch.mediaItems) {
         try {
+          // ✅ VERIFICAÇÃO DE RATE LIMIT ANTES DE CADA ENVIO
+          const hadRateLimitDelay = await smartDelay(whatsappInstance._id, batch.options);
+          if (hadRateLimitDelay) {
+            rateLimitHits++;
+          }
+
           let jid;
           if (contact.whatsappId && contact.whatsappId.includes('@')) {
             jid = contact.whatsappId;
@@ -145,7 +246,7 @@ const processMediaBatch = async (batchId) => {
           console.log('📝 Opções:', sendOptions);
           console.log('🖋️ Legenda:', `"${caption}"`);
 
-          // ✅ CORREÇÃO: Usar o método correto para enviar mídia
+          // ✅ ENVIO COM PROTEÇÃO DE RATE LIMITING
           const mediaResult = await whatsappBaileysService.sendMediaToContact(
             whatsappInstance.sessionName,
             jid,
@@ -166,17 +267,13 @@ const processMediaBatch = async (batchId) => {
             caption: caption // ← REGISTRAR QUAL CAPTION FOI ENVIADO
           });
 
-          console.log(`✅ Mídia enviada para ${contact.name}`);
+          console.log(`✅ Mídia enviada para ${contact.name} (${sentCount}/${batch.progress.total})`);
 
+          // ✅ ATUALIZAR PROGRESSO NO BANCO
           await MediaBatch.findByIdAndUpdate(batchId, {
             'progress.sent': sentCount,
             'progress.failed': failedCount
           });
-
-          // Delay entre mensagens
-          if (batch.options?.delayBetweenMessages) {
-            await new Promise(resolve => setTimeout(resolve, batch.options.delayBetweenMessages));
-          }
 
         } catch (error) {
           console.error(`❌ Erro ao enviar mídia para ${contact.name}:`, error.message);
@@ -195,10 +292,18 @@ const processMediaBatch = async (batchId) => {
           await MediaBatch.findByIdAndUpdate(batchId, {
             'progress.failed': failedCount
           });
+
+          // ✅ TRATAMENTO ESPECÍFICO PARA ERROS DE RATE LIMIT
+          if (error.message.includes('rate limit') || error.message.includes('too many') || error.message.includes('429')) {
+            console.warn(`🚨 DETECTADO RATE LIMIT DO WHATSAPP! Aguardando 2 minutos...`);
+            await new Promise(resolve => setTimeout(resolve, 120000)); // 2 minutos
+            rateLimitHits++;
+          }
         }
       }
     }
 
+    // ✅ STATUS FINAL COM INFORMAÇÕES DE RATE LIMIT
     const finalStatus = failedCount === (allContacts.length * batch.mediaItems.length) ? 'failed' : 'completed';
 
     await MediaBatch.findByIdAndUpdate(batchId, {
@@ -209,6 +314,9 @@ const processMediaBatch = async (batchId) => {
     });
 
     console.log(`✅ Lote de mídia ${batch.name} finalizado: ${sentCount} enviados, ${failedCount} falhas`);
+    if (rateLimitHits > 0) {
+      console.log(`⚠️  Foram detectados ${rateLimitHits} hits de rate limit durante o processamento`);
+    }
 
   } catch (error) {
     console.error(`❌ Erro no processamento do lote de mídia ${batchId}:`, error);
@@ -227,10 +335,13 @@ const processMediaBatch = async (batchId) => {
         }
       }
     });
+  } finally {
+    // ✅ LIMPEZA PERIÓDICA DOS LIMITES
+    rateLimitService.cleanupOldLimits();
   }
 };
 
-// ✅ CORREÇÃO: Exportar como funções nomeadas
+// ✅ CONTROLLER CREATE MEDIA BATCH COM VALIDAÇÃO DE LIMITES
 const createMediaBatch = async (req, res) => {
   console.log('📦 Criando novo lote de mídia...');
   console.log('Dados do lote:', req.body);
@@ -292,6 +403,12 @@ const createMediaBatch = async (req, res) => {
       });
     }
 
+    // ✅ VALIDAÇÃO DE LIMITES ANTES DE CRIAR O LOTE
+    if (totalSends > 100) {
+      console.warn(`⚠️ Lote grande detectado: ${totalSends} envios`);
+      // Poderia implementar confirmação para lotes muito grandes
+    }
+
     // ✅ CORREÇÃO CRÍTICA: GARANTIR QUE CAPTION VÁ PARA AS OPTIONS
     const batchOptions = {
       ...(options || {}),
@@ -321,7 +438,7 @@ const createMediaBatch = async (req, res) => {
       options: batch.options
     });
 
-    // Iniciar processamento
+    // ✅ INICIAR PROCESSAMENTO COM RATE LIMITING
     processMediaBatch(batch._id);
 
     res.status(201).json({
@@ -338,6 +455,10 @@ const createMediaBatch = async (req, res) => {
         caption: batch.caption, // ← INCLUIR CAPTION NA RESPOSTA
         options: batch.options,
         createdAt: batch.createdAt
+      },
+      rateLimitInfo: {
+        maxPerMinute: 10,
+        estimatedTime: Math.ceil(totalSends / 10) + ' minutos'
       }
     });
 
@@ -350,6 +471,7 @@ const createMediaBatch = async (req, res) => {
   }
 };
 
+// ✅ FUNÇÕES EXISTENTES (mantidas conforme seu código)
 const uploadMedia = async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
@@ -553,7 +675,7 @@ const cancelMediaBatch = async (req, res) => {
   }
 };
 
-// ✅ CORREÇÃO: Exportar todas as funções
+// ✅ EXPORTAR TODAS AS FUNÇÕES
 module.exports = {
   createMediaBatch,
   uploadMedia,
@@ -561,5 +683,6 @@ module.exports = {
   getMediaBatches,
   getMediaBatch,
   cancelMediaBatch,
-  processMediaBatch
+  processMediaBatch,
+  rateLimitService // Exportar para uso em outros controllers
 };
