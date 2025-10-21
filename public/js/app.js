@@ -2192,6 +2192,7 @@ class App {
                 break;
             case 'batchesSection':
                 console.log('Batches section activated');
+                this.batches.loadBatches();
                 break;
             default:
                 console.log('Unknown section:', sectionId);

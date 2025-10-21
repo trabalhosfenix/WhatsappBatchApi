@@ -342,6 +342,7 @@ const processMediaBatch = async (batchId) => {
 };
 
 // ✅ CONTROLLER CREATE MEDIA BATCH COM VALIDAÇÃO DE LIMITES
+// mediaBatchController.js - ATUALIZAR createMediaBatch
 const createMediaBatch = async (req, res) => {
   console.log('📦 Criando novo lote de mídia...');
   console.log('Dados do lote:', req.body);
@@ -349,10 +350,11 @@ const createMediaBatch = async (req, res) => {
   try {
     const { name, mediaItems, contactGroupIds, whatsappInstanceId, caption, options } = req.body;
 
-    // ✅ DEBUG: VERIFICAR O QUE CHEGA DO FRONTEND
+    // ✅ DEBUG MELHORADO
     console.log('🔍 Dados recebidos do frontend:', {
       captionRecebido: caption,
-      optionsRecebidas: options
+      optionsRecebidas: options,
+      mediaItemsCount: mediaItems?.length
     });
 
     if (!name || !mediaItems || !contactGroupIds || !whatsappInstanceId) {
@@ -403,42 +405,38 @@ const createMediaBatch = async (req, res) => {
       });
     }
 
-    // ✅ VALIDAÇÃO DE LIMITES ANTES DE CRIAR O LOTE
-    if (totalSends > 100) {
-      console.warn(`⚠️ Lote grande detectado: ${totalSends} envios`);
-      // Poderia implementar confirmação para lotes muito grandes
-    }
-
-    // ✅ CORREÇÃO CRÍTICA: GARANTIR QUE CAPTION VÁ PARA AS OPTIONS
+    // ✅ CORREÇÃO CRÍTICA: SALVAR CAPTION CORRETAMENTE
     const batchOptions = {
       ...(options || {}),
-      caption: caption || options?.caption || '' // ← PRIORIDADE CORRETA
+      caption: caption || options?.caption || ''
     };
 
     console.log('🔄 Opções finais do batch:', batchOptions);
 
+    // ✅ CRIAR BATCH COM CAPTION NO NÍVEL PRINCIPAL E NAS OPTIONS
     const batch = await MediaBatch.create({
       userId: req.user._id,
       whatsappInstanceId,
       name,
       mediaItems,
       contactGroupIds,
-      caption: caption || '', // ← PRESERVAR NO BATCH TAMBÉM
+      caption: caption || '', // ✅ SALVAR NO NÍVEL PRINCIPAL
       progress: {
         total: totalSends,
         sent: 0,
         failed: 0
       },
-      options: batchOptions // ← USAR AS OPTIONS CORRIGIDAS
+      options: batchOptions // ✅ SALVAR NAS OPTIONS TAMBÉM
     });
 
     console.log('✅ Batch criado no banco:', {
       _id: batch._id,
-      caption: batch.caption,
-      options: batch.options
+      caption: batch.caption, // ✅ DEVE TER VALOR AGORA
+      optionsCaption: batch.options?.caption,
+      mediaItemsCount: batch.mediaItems.length
     });
 
-    // ✅ INICIAR PROCESSAMENTO COM RATE LIMITING
+    // ✅ INICIAR PROCESSAMENTO
     processMediaBatch(batch._id);
 
     res.status(201).json({
@@ -452,7 +450,7 @@ const createMediaBatch = async (req, res) => {
         mediaCount: batch.mediaItems.length,
         totalContacts: totalContacts,
         totalSends: totalSends,
-        caption: batch.caption, // ← INCLUIR CAPTION NA RESPOSTA
+        caption: batch.caption, // ✅ INCLUIR NA RESPOSTA
         options: batch.options,
         createdAt: batch.createdAt
       },

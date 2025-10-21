@@ -10,7 +10,7 @@ class MediaBatchesManager {
 
     initEvents() {
         console.log('🎯 Inicializando eventos do MediaBatchesManager...');
-        
+
         const button = document.getElementById('newMediaBatchBtn');
         console.log('🔍 Procurando pelo botão "Novo Envio de Mídia":', button);
 
@@ -25,10 +25,10 @@ class MediaBatchesManager {
 
         // Carregar lotes de mídia quando a página carregar
         this.loadMediaBatches();
-        
+
         // Adicionar evento para paginação
         this.setupPaginationEvents();
-        
+
         // Adicionar event delegation para os botões dos batches
         this.setupBatchEvents();
     }
@@ -37,18 +37,18 @@ class MediaBatchesManager {
         // Usar event delegation para lidar com cliques nos batches
         document.addEventListener('click', (e) => {
             const target = e.target;
-            
+
             // Encontrar o botão clicado ou seu pai
             const button = target.closest('button');
             if (!button) return;
-            
+
             // Verificar se é um botão de ação do batch
             const batchCard = button.closest('.batch-card');
             if (!batchCard) return;
-            
+
             const batchId = batchCard.dataset.batchId;
             if (!batchId) return;
-            
+
             // Determinar qual ação foi clicada
             if (button.textContent.includes('Reutilizar') || button.querySelector('.fa-recycle')) {
                 e.preventDefault();
@@ -78,7 +78,7 @@ class MediaBatchesManager {
     // Método seguro para chamadas API
     async safeApiRequest(method, endpoint, data = null, isFormData = false) {
         console.log(`🌐 API Request: ${method} ${endpoint}`, data);
-        
+
         try {
             if (this.app && typeof this.app.apiRequest === 'function') {
                 const result = await this.app.apiRequest(method, endpoint, data, isFormData);
@@ -98,7 +98,7 @@ class MediaBatchesManager {
     // Fallback direto para requisições API
     async directApiRequest(method, endpoint, data = null, isFormData = false) {
         this.safeShowLoading(true);
-        
+
         try {
             const options = {
                 method: method,
@@ -121,11 +121,11 @@ class MediaBatchesManager {
 
             console.log(`🔧 Fetch options:`, options);
             const response = await fetch(endpoint, options);
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            
+
             const result = await response.json();
             this.safeShowLoading(false);
             return result;
@@ -162,7 +162,7 @@ class MediaBatchesManager {
     // Método seguro para fechar modal
     safeCloseModal(modalId) {
         console.log(`🔒 Tentando fechar modal: ${modalId}`);
-        
+
         if (this.app && typeof this.app.closeModal === 'function') {
             this.app.closeModal(modalId);
         } else {
@@ -179,7 +179,7 @@ class MediaBatchesManager {
                 });
             }
         }
-        
+
         this.currentModal = null;
     }
 
@@ -215,72 +215,97 @@ class MediaBatchesManager {
 
     createMediaBatchModal(batchData = null) {
         console.log('🎨 Criando modal de envio de mídia...');
-        
+
         const isEdit = batchData !== null;
         const modalTitle = isEdit ? `Reutilizar Lote: ${batchData.name}` : 'Novo Envio de Mídia em Lote';
         const buttonText = isEdit ? 'Reutilizar Lote' : 'Criar Lote de Mídia';
-        
+
+        // Preparar informações das mídias existentes
+        const existingMediaInfo = isEdit ? this.renderExistingMediaInfo(batchData) : '';
+
+        // CORREÇÃO: Usar a legenda do batchData se existir
+        const existingCaption = batchData ? (batchData.options.caption || '') : '';
+
         const modalHTML = `
-            <div id="mediaBatchModal" class="modal" style="display: block;">
-                <div class="modal-content" style="max-width: 800px;">
-                    <span class="close" id="closeMediaBatchModal">&times;</span>
-                    <h3>${modalTitle}</h3>
-                    
-                    <form id="mediaBatchForm">
-                        <div class="form-group">
-                            <label for="mediaBatchName">Nome do Lote:</label>
-                            <input type="text" id="mediaBatchName" placeholder="Ex: Campanha de Natal" value="${batchData ? batchData.name : ''}" required>
-                        </div>
+        <div id="mediaBatchModal" class="modal" style="display: block;">
+            <div class="modal-content" style="max-width: 900px;">
+                <span class="close" id="closeMediaBatchModal">&times;</span>
+                <h3>${modalTitle}</h3>
+                
+                <form id="mediaBatchForm">
+                    <div class="form-group">
+                        <label for="mediaBatchName">Nome do Lote:</label>
+                        <input type="text" id="mediaBatchName" placeholder="Ex: Campanha de Natal" value="${batchData ? batchData.name : ''}" required>
+                    </div>
 
-                        <div class="form-group">
-                            <label for="mediaBatchInstance">Instância WhatsApp:</label>
-                            <select id="mediaBatchInstance" required>
-                                <option value="">Carregando instâncias...</option>
-                            </select>
-                        </div>
+                    <div class="form-group">
+                        <label for="mediaBatchInstance">Instância WhatsApp:</label>
+                        <select id="mediaBatchInstance" required>
+                            <option value="">Carregando instâncias...</option>
+                        </select>
+                    </div>
 
-                        <div class="form-group">
-                            <label>Grupos de Contatos:</label>
-                            <div id="mediaBatchGroups" class="checkbox-group">
-                                <div class="loading-text">Carregando grupos...</div>
+                    <div class="form-group">
+                        <label>Grupos de Contatos:</label>
+                        
+                        <!-- ✅ BARRA DE PESQUISA -->
+                        <div class="search-container">
+                            <div class="search-input-wrapper">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="groupSearch" placeholder="Buscar grupos por nome..." class="search-input">
+                                <span id="searchClear" class="search-clear" style="display: none;">
+                                    <i class="fas fa-times"></i>
+                                </span>
                             </div>
-                            <small style="color: #666; display: block; margin-top: 5px;">Mostrando todos os grupos disponíveis</small>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Arquivo de Mídia:</label>
-                            <div class="file-upload-area" id="mediaUploadArea">
-                                <i class="fas fa-cloud-upload-alt"></i>
-                                <p>Clique para selecionar ou arraste e solte o arquivo aqui</p>
-                                <input type="file" id="mediaFilesInput" accept="image/*,video/*,audio/*,application/pdf" style="display: none;" multiple>
+                            <div class="search-info">
+                                <span id="searchResultsCount"></span>
                             </div>
-                            <div id="filePreview" class="file-preview"></div>
-                            ${isEdit ? `
-                                <div class="existing-media-info">
-                                    <p><strong>Mídias existentes no lote:</strong> ${batchData.mediaCount || 0} arquivo(s)</p>
-                                    <small>Novos arquivos serão adicionados aos existentes</small>
-                                </div>
-                            ` : ''}
                         </div>
 
-                        <div class="form-group">
-                            <label for="mediaBatchCaption">Legenda (opcional):</label>
-                            <textarea id="mediaBatchCaption" rows="3" placeholder="Digite a mensagem que acompanhará a mídia...">${batchData ? batchData.caption || '' : ''}</textarea>
+                        <!-- ✅ BADGES DOS GRUPOS SELECIONADOS -->
+                        <div id="selectedGroupsBadges" class="selected-groups-badges">
+                            <div class="no-groups-selected">Nenhum grupo selecionado</div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="mediaDelay">Intervalo entre envios (ms):</label>
-                            <input type="number" id="mediaDelay" value="3000" min="1000" max="60000">
+                        <!-- ✅ LISTA DE GRUPOS COM CHECKBOX -->
+                        <div id="mediaBatchGroups" class="checkbox-group">
+                            <div class="loading-text">Carregando grupos...</div>
                         </div>
+                        
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            <span id="groupsCounter">Mostrando todos os grupos disponíveis</span>
+                        </small>
+                    </div>
 
-                        <div class="form-actions">
-                            <button type="button" class="btn btn-secondary" id="cancelMediaBatchBtn">Cancelar</button>
-                            <button type="submit" class="btn btn-primary">${buttonText}</button>
+                    <div class="form-group">
+                        <label>Arquivo de Mídia:</label>
+                        <div class="file-upload-area" id="mediaUploadArea">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Clique para selecionar ou arraste e solte o arquivo aqui</p>
+                            <input type="file" id="mediaFilesInput" accept="image/*,video/*,audio/*,application/pdf" style="display: none;" multiple>
                         </div>
-                    </form>
-                </div>
+                        <div id="filePreview" class="file-preview"></div>
+                        ${existingMediaInfo}
+                    </div>
+
+                    <div class="form-group">
+                        <label for="mediaBatchCaption">Legenda (opcional):</label>
+                        <textarea id="mediaBatchCaption" rows="3" placeholder="Digite a mensagem que acompanhará a mídia...">${existingCaption}</textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="mediaDelay">Intervalo entre envios (ms):</label>
+                        <input type="number" id="mediaDelay" value="3000" min="1000" max="60000">
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelMediaBatchBtn">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">${buttonText}</button>
+                    </div>
+                </form>
             </div>
-        `;
+        </div>
+    `;
 
         document.body.insertAdjacentHTML('beforeend', modalHTML);
         this.currentModal = 'mediaBatchModal';
@@ -295,13 +320,299 @@ class MediaBatchesManager {
         this.initMediaBatchForm(batchData);
     }
 
+    // NOVO MÉTODO: Renderizar informações das mídias existentes
+    renderExistingMediaInfo(batchData) {
+        if (!batchData.mediaItems || batchData.mediaItems.length === 0) {
+            return `
+                <div class="existing-media-info">
+                    <p><strong>Mídias existentes no lote:</strong> Nenhuma mídia encontrada</p>
+                </div>
+            `;
+        }
+
+        const mediaItems = batchData.mediaItems.slice(0, 10); // Mostrar apenas as primeiras 10
+        const hasMore = batchData.mediaItems.length > 10;
+
+        return `
+            <div class="existing-media-info">
+                <p><strong>Mídias existentes no lote:</strong> ${batchData.mediaItems.length} arquivo(s)</p>
+                <small>Novos arquivos serão adicionados aos existentes</small>
+                
+                <div class="existing-media-preview">
+                    <h4>Prévia das Mídias:</h4>
+                    <div class="media-preview-grid">
+                        ${mediaItems.map((media, index) => this.renderMediaPreview(media, index)).join('')}
+                        ${hasMore ? `<div class="media-more">+${batchData.mediaItems.length - 10} mais...</div>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+
+    // ✅ MÉTODO CORRIGIDO: Carregar mídia como Base64
+    async loadMediaAsBase64(media, index) {
+        try {
+            console.log('🖼️ Carregando mídia como base64:', {
+                index,
+                fileName: media.fileName,
+                url: media.url
+            });
+
+            // Extrair userId e filename da URL
+            const urlParts = media.url.split('/');
+            const userId = urlParts[urlParts.length - 2];
+            const filename = urlParts[urlParts.length - 1];
+
+            console.log('🔍 Parâmetros extraídos:', { userId, filename });
+
+            const response = await this.safeApiRequest(
+                'GET',
+                `/api/media/media-file/${userId}/${filename}`
+            );
+
+            if (response.success && response.data) {
+                console.log('✅ Base64 carregado com sucesso para índice:', index);
+
+                // Atualizar o preview com a imagem base64
+                const mediaElement = document.querySelector(`[data-media-index="${index}"] .media-preview-content`);
+                if (mediaElement) {
+                    mediaElement.innerHTML = `<img src="${response.data}" alt="${media.originalName}" />`;
+                    console.log('✅ Preview atualizado com imagem base64');
+                }
+
+                // Também atualizar o objeto media para cache
+                if (this.preservedBatchData && this.preservedBatchData.mediaItems[index]) {
+                    this.preservedBatchData.mediaItems[index].base64Data = response.data;
+                }
+            } else {
+                console.error('❌ Resposta da API não sucedida:', response);
+                this.showFallbackIcon(media, index);
+            }
+        } catch (error) {
+            console.error('❌ Erro ao carregar mídia como base64:', error);
+            this.showFallbackIcon(media, index);
+        }
+    }
+
+    // ✅ MÉTODO AUXILIAR: Mostrar ícone de fallback
+    showFallbackIcon(media, index) {
+        const mediaElement = document.querySelector(`[data-media-index="${index}"] .media-preview-content`);
+        if (mediaElement) {
+            const fileType = media.fileType || media.mimeType || 'unknown';
+            let iconClass = 'fas fa-file';
+
+            if (fileType.startsWith('image/')) iconClass = 'fas fa-file-image';
+            else if (fileType.startsWith('video/')) iconClass = 'fas fa-file-video';
+            else if (fileType.startsWith('audio/')) iconClass = 'fas fa-file-audio';
+            else if (fileType === 'application/pdf') iconClass = 'fas fa-file-pdf';
+
+            mediaElement.innerHTML = `
+            <div class="media-fallback">
+                <i class="${iconClass}"></i>
+            </div>
+        `;
+        }
+    }
+
+    // ✅ MÉTODO MELHORADO: Renderizar prévia real das mídias
+    // MediaBatchesManager.js - USAR ENDPOINT PÚBLICO
+
+    renderMediaPreview(media, index) {
+        const fileType = media.fileType || media.mimeType || 'unknown';
+        const fileName = media.originalName || media.fileName || `Mídia ${index + 1}`;
+        const fileSize = media.fileSize ? this.formatFileSize(media.fileSize) : 'Tamanho desconhecido';
+
+        let previewContent = '';
+        let mediaClass = 'media-preview-item';
+
+        // ✅ USAR ENDPOINT PÚBLICO PARA IMAGENS
+        if (fileType.startsWith('image/')) {
+            mediaClass += ' media-type-image';
+
+            // Construir URL pública para a imagem
+            const imageUrl = `/api/media/public-media/${this.getUserIdFromMedia(media)}/${this.getFilenameFromMedia(media)}`;
+
+            console.log('🖼️ Gerando URL da imagem:', imageUrl);
+
+            previewContent = `
+            <img src="${imageUrl}" alt="${fileName}" 
+                 onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                 loading="lazy" />
+            <div class="media-fallback" style="display: none;">
+                <i class="fas fa-file-image"></i>
+                <span>Erro ao carregar</span>
+            </div>
+        `;
+        } else if (fileType.startsWith('video/')) {
+            mediaClass += ' media-type-video';
+            previewContent = `
+            <div class="media-fallback">
+                <i class="fas fa-file-video"></i>
+                <span>Vídeo</span>
+            </div>
+        `;
+        } else if (fileType.startsWith('audio/')) {
+            mediaClass += ' media-type-audio';
+            previewContent = `
+            <div class="media-fallback">
+                <i class="fas fa-file-audio"></i>
+                <span>Áudio</span>
+            </div>
+        `;
+        } else if (fileType === 'application/pdf') {
+            mediaClass += ' media-type-pdf';
+            previewContent = `
+            <div class="media-fallback">
+                <i class="fas fa-file-pdf"></i>
+                <span>PDF</span>
+            </div>
+        `;
+        } else {
+            mediaClass += ' media-type-unknown';
+            previewContent = `
+            <div class="media-fallback">
+                <i class="fas fa-file"></i>
+                <span>Arquivo</span>
+            </div>
+        `;
+        }
+
+        return `
+        <div class="${mediaClass}" data-media-index="${index}" title="${fileName} (${fileSize})">
+            <div class="media-preview-content">
+                ${previewContent}
+            </div>
+            <div class="media-preview-info">
+                <div class="media-name">${this.truncateFileName(fileName)}</div>
+                <div class="media-size">${fileSize}</div>
+            </div>
+        </div>
+    `;
+    }
+
+    // ✅ MÉTODO AUXILIAR PARA TRUNCAR NOME DO ARQUIVO
+    truncateFileName(fileName) {
+        if (fileName.length > 20) {
+            const ext = fileName.split('.').pop();
+            const name = fileName.substring(0, 15);
+            return `${name}...${ext}`;
+        }
+        return fileName;
+    }
+
+    getUserIdFromMedia(media) {
+        if (media.url) {
+            const urlParts = media.url.split('/');
+            return urlParts[urlParts.length - 2];
+        }
+        return null;
+    }
+
+    getFilenameFromMedia(media) {
+        if (media.url) {
+            const urlParts = media.url.split('/');
+            return urlParts[urlParts.length - 1];
+        }
+        return null;
+    }
+
+    getUserIdFromMedia(media) {
+        if (media.url) {
+            const urlParts = media.url.split('/');
+            return urlParts[urlParts.length - 2];
+        }
+        return null;
+    }
+
+    getFilenameFromMedia(media) {
+        if (media.url) {
+            const urlParts = media.url.split('/');
+            return urlParts[urlParts.length - 1];
+        }
+        return null;
+    }
+
+    // ✅ MÉTODOS AUXILIARES PARA EXTRAIR USER ID E FILENAME
+    getUserIdFromMedia(media) {
+        if (media.url) {
+            const urlParts = media.url.split('/');
+            return urlParts[urlParts.length - 2]; // userId
+        }
+        return null;
+    }
+
+    getFilenameFromMedia(media) {
+        if (media.url) {
+            const urlParts = media.url.split('/');
+            return urlParts[urlParts.length - 1]; // filename
+        }
+        return null;
+    }
+
+    // ✅ ATUALIZAR O MÉTODO reuseBatch
+    async reuseBatch(batchId) {
+        try {
+            console.log(`🔄 Reutilizando lote: ${batchId}`);
+            const response = await this.safeApiRequest('GET', `/api/media/batches/${batchId}`);
+
+            if (response.success) {
+                console.log('✅ Batch carregado para reutilização:', {
+                    name: response.batch.name,
+                    mediaCount: response.batch.mediaItems?.length,
+                    caption: response.batch.caption
+                });
+
+                // ✅ CARREGAR MÍDIAS COMO BASE64 APENAS SE FOREM IMAGENS
+                if (response.batch.mediaItems && response.batch.mediaItems.length > 0) {
+                    console.log('🖼️ Verificando mídias para carregar como base64...');
+
+                    for (let i = 0; i < response.batch.mediaItems.length; i++) {
+                        const media = response.batch.mediaItems[i];
+                        if (media.mimeType && media.mimeType.startsWith('image/')) {
+                            try {
+                                const urlParts = media.url.split('/');
+                                const userId = urlParts[urlParts.length - 2];
+                                const filename = urlParts[urlParts.length - 1];
+
+                                console.log(`📥 Carregando imagem ${i}: ${filename}`);
+
+                                const mediaResponse = await this.safeApiRequest(
+                                    'GET',
+                                    `/api/media/media-file/${userId}/${filename}`
+                                );
+
+                                if (mediaResponse.success) {
+                                    response.batch.mediaItems[i].base64Data = mediaResponse.data;
+                                    console.log(`✅ Imagem ${i} carregada como base64`);
+                                } else {
+                                    console.warn(`⚠️ Falha ao carregar imagem ${i}:`, mediaResponse.error);
+                                }
+                            } catch (error) {
+                                console.warn(`⚠️ Erro ao carregar imagem ${i}:`, error.message);
+                            }
+                        }
+                    }
+                }
+
+                this.showMediaBatchModal(response.batch);
+            } else {
+                throw new Error(response.error);
+            }
+        } catch (error) {
+            console.error('Erro ao carregar batch para reutilização:', error);
+            this.safeShowNotification(`❌ Erro: ${error.message}`, 'error');
+        }
+    }
+
+
     setupModalEvents() {
         // Fechar com botão X
         document.getElementById('closeMediaBatchModal').addEventListener('click', () => {
             console.log('❌ Fechando modal via botão X...');
             this.safeCloseModal('mediaBatchModal');
         });
-        
+
         // Fechar com botão Cancelar
         document.getElementById('cancelMediaBatchBtn').addEventListener('click', () => {
             console.log('❌ Cancelando modal via botão Cancelar...');
@@ -330,12 +641,20 @@ class MediaBatchesManager {
         await this.loadInstancesToSelect(batchData);
         await this.loadGroupsToSelect(batchData);
         this.initFileUpload();
-        
+
         document.getElementById('mediaBatchForm').addEventListener('submit', (e) => {
             e.preventDefault();
             console.log('📤 Submetendo formulário...');
             this.createMediaBatch(batchData);
         });
+
+        // ✅ FOCUS NA BARRA DE PESQUISA
+        setTimeout(() => {
+            const searchInput = document.getElementById('groupSearch');
+            if (searchInput) {
+                searchInput.focus();
+            }
+        }, 500);
     }
 
     async loadInstancesToSelect(batchData = null) {
@@ -348,47 +667,47 @@ class MediaBatchesManager {
 
             select.innerHTML = '<option value="">Carregando instâncias...</option>';
             const response = await this.safeApiRequest('GET', '/api/whatsapp/instances');
-            
+
             console.log('📱 Resposta completa das instâncias:', response);
-            
+
             if (response.success && Array.isArray(response.instances)) {
                 select.innerHTML = '<option value="">Selecione uma instância...</option>';
-                
+
                 // Filtrar instâncias disponíveis (com phoneNumber)
-                const availableInstances = response.instances.filter(instance => 
+                const availableInstances = response.instances.filter(instance =>
                     instance.phoneNumber
                 );
-                
+
                 console.log('✅ Instâncias disponíveis para select:', availableInstances);
-                
+
                 if (availableInstances.length === 0) {
                     select.innerHTML = '<option value="">Nenhuma instância disponível</option>';
                     this.safeShowNotification('⚠️ Nenhuma instância com número de telefone encontrada', 'warning');
                     return;
                 }
-                
+
                 availableInstances.forEach(instance => {
                     const option = document.createElement('option');
                     option.value = instance._id;
-                    
+
                     // Formatar número para exibição
-                    const phoneDisplay = instance.phoneNumber ? 
-                        instance.phoneNumber.replace('@s.whatsapp.net', '').replace('55', '') : 
+                    const phoneDisplay = instance.phoneNumber ?
+                        instance.phoneNumber.replace('@s.whatsapp.net', '').replace('55', '') :
                         'Número não disponível';
-                    
-                    const statusText = instance.status === 'connected' ? 'Conectada' : 
-                                     instance.status || 'Desconhecido';
-                    
+
+                    const statusText = instance.status === 'connected' ? 'Conectada' :
+                        instance.status || 'Desconhecido';
+
                     option.textContent = `${instance.sessionName} (${phoneDisplay}) - ${statusText}`;
-                    
+
                     // Selecionar instância do batch se estiver reutilizando
                     if (batchData && batchData.whatsappInstance && batchData.whatsappInstance._id === instance._id) {
                         option.selected = true;
                     }
-                    
+
                     select.appendChild(option);
                 });
-                
+
                 console.log(`✅ ${availableInstances.length} instâncias carregadas no select`);
             } else {
                 console.error('❌ Estrutura inválida na resposta:', response);
@@ -413,53 +732,14 @@ class MediaBatchesManager {
 
             container.innerHTML = '<div class="loading-text">Carregando grupos...</div>';
             const response = await this.safeApiRequest('GET', '/api/contact-groups?limit=100');
-          
+
             console.log('👥 Resposta completa dos grupos:', response);
-            
+
             if (response.success && Array.isArray(response.contactGroups)) {
-                container.innerHTML = '';
-                
-                if (response.contactGroups.length === 0) {
-                    container.innerHTML = '<div class="no-groups">Nenhum grupo encontrado</div>';
-                    return;
-                }
-                
-                // Mostrar todos os grupos
-                response.contactGroups.forEach(group => {
-                    const checkbox = document.createElement('div');
-                    checkbox.className = 'checkbox-item';
-                    
-                    const contactCount = group.contacts ? group.contacts.length : 0;
-                    const isEmpty = contactCount === 0;
-                    
-                    // Verificar se este grupo estava no batch original
-                    const isChecked = batchData && batchData.contactGroups ? 
-                        batchData.contactGroups.some(g => g._id === group._id) : false;
-                    
-                    checkbox.innerHTML = `
-                        <label>
-                            <input type="checkbox" name="contactGroups" value="${group._id}" 
-                                ${isEmpty ? 'disabled' : ''} ${isChecked ? 'checked' : ''}>
-                            <span class="${isEmpty ? 'empty-group' : ''}">
-                                ${group.name} (${contactCount} contatos)
-                                ${isEmpty ? ' - <em>vazio</em>' : ''}
-                            </span>
-                        </label>
-                    `;
-                    container.appendChild(checkbox);
-                });
-                
-                console.log(`✅ Carregados ${response.contactGroups.length} grupos`);
-                
-                // Adicionar contador
-                const totalGroups = response.contactGroups.length;
-                const groupsWithContacts = response.contactGroups.filter(g => g.contacts && g.contacts.length > 0).length;
-                
-                const counter = document.createElement('div');
-                counter.className = 'groups-counter';
-                counter.innerHTML = `<strong>${groupsWithContacts}/${totalGroups}</strong> grupos com contatos`;
-                container.appendChild(counter);
-                
+                this.allGroups = response.contactGroups; // ✅ SALVAR GRUPOS PARA PESQUISA
+                this.renderGroupsList(this.allGroups, batchData);
+                this.initSearchFunctionality();
+                this.initSelectedGroupsBadges();
             } else {
                 console.error('❌ Estrutura inválida na resposta:', response);
                 container.innerHTML = '<div class="error-text">Erro ao carregar grupos</div>';
@@ -473,10 +753,227 @@ class MediaBatchesManager {
         }
     }
 
+    // ✅ NOVO MÉTODO: Renderizar lista de grupos com suporte a pesquisa
+    renderGroupsList(groups, batchData = null) {
+        const container = document.getElementById('mediaBatchGroups');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        if (groups.length === 0) {
+            container.innerHTML = '<div class="no-groups">Nenhum grupo encontrado</div>';
+            return;
+        }
+
+        // Mostrar todos os grupos
+        groups.forEach(group => {
+            const checkbox = document.createElement('div');
+            checkbox.className = 'checkbox-item';
+            checkbox.dataset.groupId = group._id;
+            checkbox.dataset.groupName = group.name;
+
+            const contactCount = group.contacts ? group.contacts.length : 0;
+            const isEmpty = contactCount === 0;
+
+            // Verificar se este grupo estava no batch original
+            const isChecked = batchData && batchData.contactGroups ?
+                batchData.contactGroups.some(g => g._id === group._id) : false;
+
+            checkbox.innerHTML = `
+            <label>
+                <input type="checkbox" name="contactGroups" value="${group._id}" 
+                    ${isEmpty ? 'disabled' : ''} ${isChecked ? 'checked' : ''}>
+                <span class="${isEmpty ? 'empty-group' : ''}">
+                    ${group.name} (${contactCount} contatos)
+                    ${isEmpty ? ' - <em>vazio</em>' : ''}
+                </span>
+            </label>
+        `;
+            container.appendChild(checkbox);
+        });
+
+        // Adicionar contador
+        const totalGroups = groups.length;
+        const groupsWithContacts = groups.filter(g => g.contacts && g.contacts.length > 0).length;
+
+        const counter = document.createElement('div');
+        counter.className = 'groups-counter';
+        counter.innerHTML = `<strong>${groupsWithContacts}/${totalGroups}</strong> grupos com contatos`;
+        container.appendChild(counter);
+
+        // ✅ ATUALIZAR BADGES SE HOUVER GRUPOS SELECIONADOS
+        if (batchData && batchData.contactGroups) {
+            this.updateSelectedGroupsBadges(batchData.contactGroups);
+        }
+    }
+
+    // ✅ NOVO MÉTODO: Inicializar funcionalidade de pesquisa
+    initSearchFunctionality() {
+        const searchInput = document.getElementById('groupSearch');
+        const searchClear = document.getElementById('searchClear');
+        const searchResultsCount = document.getElementById('searchResultsCount');
+        const groupsCounter = document.getElementById('groupsCounter');
+
+        if (!searchInput) return;
+
+        searchInput.addEventListener('input', (e) => {
+            const searchTerm = e.target.value.toLowerCase().trim();
+
+            // Mostrar/ocultar botão de limpar
+            searchClear.style.display = searchTerm ? 'flex' : 'none';
+
+            if (searchTerm) {
+                this.filterGroups(searchTerm);
+                searchResultsCount.textContent = `Encontrados ${this.getVisibleGroupsCount()} grupos`;
+                groupsCounter.textContent = `Mostrando resultados da pesquisa`;
+            } else {
+                this.clearSearch();
+                searchResultsCount.textContent = '';
+                groupsCounter.textContent = 'Mostrando todos os grupos disponíveis';
+            }
+        });
+
+        // Limpar pesquisa
+        searchClear.addEventListener('click', () => {
+            searchInput.value = '';
+            searchClear.style.display = 'none';
+            searchResultsCount.textContent = '';
+            groupsCounter.textContent = 'Mostrando todos os grupos disponíveis';
+            this.clearSearch();
+            searchInput.focus();
+        });
+
+        // Tecla ESC para limpar pesquisa
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                searchClear.style.display = 'none';
+                searchResultsCount.textContent = '';
+                groupsCounter.textContent = 'Mostrando todos os grupos disponíveis';
+                this.clearSearch();
+            }
+        });
+    }
+
+    // ✅ NOVO MÉTODO: Filtrar grupos
+    filterGroups(searchTerm) {
+        const checkboxes = document.querySelectorAll('.checkbox-item');
+        let visibleCount = 0;
+
+        checkboxes.forEach(checkbox => {
+            const groupName = checkbox.dataset.groupName.toLowerCase();
+            if (groupName.includes(searchTerm)) {
+                checkbox.classList.remove('hidden');
+                visibleCount++;
+            } else {
+                checkbox.classList.add('hidden');
+            }
+        });
+
+        // Atualizar contador
+        const counter = document.querySelector('.groups-counter');
+        if (counter) {
+            const totalWithContacts = this.allGroups.filter(g => g.contacts && g.contacts.length > 0).length;
+            counter.innerHTML = `<strong>${visibleCount}/${this.allGroups.length}</strong> grupos encontrados`;
+        }
+    }
+
+    // ✅ NOVO MÉTODO: Limpar pesquisa
+    clearSearch() {
+        const checkboxes = document.querySelectorAll('.checkbox-item');
+        checkboxes.forEach(checkbox => {
+            checkbox.classList.remove('hidden');
+        });
+
+        // Restaurar contador original
+        const counter = document.querySelector('.groups-counter');
+        if (counter && this.allGroups) {
+            const groupsWithContacts = this.allGroups.filter(g => g.contacts && g.contacts.length > 0).length;
+            counter.innerHTML = `<strong>${groupsWithContacts}/${this.allGroups.length}</strong> grupos com contatos`;
+        }
+    }
+
+    // ✅ NOVO MÉTODO: Obter contagem de grupos visíveis
+    getVisibleGroupsCount() {
+        const visibleCheckboxes = document.querySelectorAll('.checkbox-item:not(.hidden)');
+        return visibleCheckboxes.length;
+    }
+
+    // ✅ NOVO MÉTODO: Inicializar badges dos grupos selecionados
+    initSelectedGroupsBadges() {
+        const container = document.getElementById('selectedGroupsBadges');
+        if (!container) return;
+
+        // Atualizar badges quando checkboxes mudarem
+        document.addEventListener('change', (e) => {
+            if (e.target.name === 'contactGroups') {
+                this.updateSelectedGroupsBadges();
+            }
+        });
+    }
+
+    // ✅ NOVO MÉTODO: Atualizar badges dos grupos selecionados
+    updateSelectedGroupsBadges(specificGroups = null) {
+        const container = document.getElementById('selectedGroupsBadges');
+        if (!container) return;
+
+        let selectedGroups = [];
+
+        if (specificGroups) {
+            // Usar grupos específicos (para reutilização)
+            selectedGroups = specificGroups;
+        } else {
+            // Obter grupos selecionados dos checkboxes
+            const selectedCheckboxes = document.querySelectorAll('input[name="contactGroups"]:checked:not(:disabled)');
+            selectedGroups = Array.from(selectedCheckboxes).map(checkbox => {
+                const checkboxItem = checkbox.closest('.checkbox-item');
+                return {
+                    _id: checkbox.value,
+                    name: checkboxItem?.dataset.groupName || 'Grupo'
+                };
+            });
+        }
+
+        if (selectedGroups.length === 0) {
+            container.innerHTML = '<div class="no-groups-selected">Nenhum grupo selecionado</div>';
+            return;
+        }
+
+        container.innerHTML = selectedGroups.map(group => `
+        <div class="group-badge" data-group-id="${group._id}">
+            <span class="group-name">${group.name}</span>
+            <button type="button" class="remove-badge" data-group-id="${group._id}">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+
+        // Adicionar evento de remoção aos badges
+        container.querySelectorAll('.remove-badge').forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                const groupId = button.dataset.groupId;
+                this.removeGroupSelection(groupId);
+            });
+        });
+    }
+
+    // ✅ NOVO MÉTODO: Remover seleção de grupo
+    removeGroupSelection(groupId) {
+        // Desmarcar checkbox
+        const checkbox = document.querySelector(`input[name="contactGroups"][value="${groupId}"]`);
+        if (checkbox) {
+            checkbox.checked = false;
+        }
+
+        // Atualizar badges
+        this.updateSelectedGroupsBadges();
+    }
+
     async createMediaBatch(existingBatchData = null) {
         try {
             this.safeShowLoading(true);
-            
+
             // Validações
             if (this.uploadedFiles.length === 0 && !existingBatchData) {
                 this.safeShowNotification('❌ Selecione pelo menos um arquivo de mídia', 'error');
@@ -505,33 +1002,34 @@ class MediaBatchesManager {
                 return;
             }
 
+            // CORREÇÃO: Capturar a legenda do textarea
+            const caption = document.getElementById('mediaBatchCaption').value.trim();
+            console.log('📝 Legenda capturada:', caption);
+
             let mediaItems = [];
-            
+
             // Se estiver reutilizando um batch, usar as mídias existentes
-            if (existingBatchData) {
-                // Carregar detalhes completos do batch para obter mediaItems
-                const batchDetails = await this.safeApiRequest('GET', `/api/media/batches/${existingBatchData._id}`);
-                if (batchDetails.success && batchDetails.batch.mediaItems) {
-                    mediaItems = batchDetails.batch.mediaItems;
-                }
+            if (existingBatchData && existingBatchData.mediaItems) {
+                mediaItems = [...existingBatchData.mediaItems];
+                console.log(`✅ Reutilizando ${mediaItems.length} mídias existentes do lote original`);
             }
 
             // Fazer upload de novos arquivos se houver
             if (this.uploadedFiles.length > 0) {
                 console.log('📤 Iniciando upload de novos arquivos...');
-                
+
                 for (const file of this.uploadedFiles) {
                     const formData = new FormData();
                     formData.append('mediaFiles', file);
-                    
+
                     const uploadResponse = await this.safeApiRequest('POST', '/api/media/upload', formData, true);
-                    
+
                     if (uploadResponse.success && uploadResponse.mediaItems) {
                         mediaItems.push(...uploadResponse.mediaItems);
-                        console.log(`✅ Upload de ${file.name} concluído`);
+                        console.log(`✅ Upload de ${file.name} concluído. Total de mídias: ${mediaItems.length}`);
                     } else {
                         console.error(`❌ Falha no upload de ${file.name}:`, uploadResponse);
-                        throw new Error(`Falha no upload do arquivo: ${file.name}`);
+                        this.safeShowNotification(`❌ Falha no upload do arquivo: ${file.name}`, 'error');
                     }
                 }
             }
@@ -548,7 +1046,7 @@ class MediaBatchesManager {
                 mediaItems: mediaItems,
                 contactGroupIds: selectedGroups.map(cb => cb.value),
                 whatsappInstanceId: instanceSelect.value,
-                caption: document.getElementById('mediaBatchCaption').value,
+                caption: caption, // CORREÇÃO: Usar a legenda capturada
                 options: {
                     delayBetweenMessages: parseInt(document.getElementById('mediaDelay').value) || 3000,
                     sendAsDocument: false
@@ -560,13 +1058,20 @@ class MediaBatchesManager {
                 batchData.originalBatchId = existingBatchData._id;
             }
 
-            console.log('📋 Dados do lote:', batchData);
+            console.log('📋 Dados do lote:', {
+                name: batchData.name,
+                mediaItems: `Array com ${batchData.mediaItems.length} itens`,
+                contactGroupIds: batchData.contactGroupIds.length,
+                caption: batchData.caption ? `"${batchData.caption}"` : 'Nenhuma',
+                originalBatchId: batchData.originalBatchId || 'Nenhum'
+            });
+
             const response = await this.safeApiRequest('POST', '/api/media/batches', batchData);
-            
+
             if (response.success) {
-                const message = existingBatchData ? 
-                    '✅ Lote reutilizado com sucesso!' : 
-                    '✅ Lote de mídia criado com sucesso!';
+                const message = existingBatchData ?
+                    `✅ Lote reutilizado com sucesso! ${mediaItems.length} mídias incluídas.` :
+                    `✅ Lote de mídia criado com sucesso! ${mediaItems.length} mídias incluídas.`;
                 this.safeShowNotification(message, 'success');
                 this.safeCloseModal('mediaBatchModal');
                 this.loadMediaBatches();
@@ -583,6 +1088,7 @@ class MediaBatchesManager {
         }
     }
 
+
     async loadMediaBatches(page = 1) {
         try {
             const container = document.getElementById('mediaBatchesList');
@@ -590,7 +1096,7 @@ class MediaBatchesManager {
 
             container.innerHTML = '<div class="loading-text">Carregando lotes de mídia...</div>';
             const response = await this.safeApiRequest('GET', `/api/media/batches?page=${page}&limit=10`);
-            
+
             if (response.success && response.batches && response.batches.length > 0) {
                 this.currentPage = page;
                 this.totalPages = response.pagination?.pages || 1;
@@ -606,7 +1112,7 @@ class MediaBatchesManager {
                         </button>
                     </div>
                 `;
-                
+
                 // Adicionar evento ao botão de criar primeiro lote
                 document.getElementById('createFirstBatchBtn')?.addEventListener('click', () => {
                     this.showMediaBatchModal();
@@ -631,14 +1137,14 @@ class MediaBatchesManager {
         if (!container || this.totalPages <= 1) return;
 
         let paginationHTML = '<div class="pagination">';
-        
+
         // Botão anterior
         if (this.currentPage > 1) {
             paginationHTML += `<button class="page-btn btn btn-secondary" data-page="${this.currentPage - 1}">
                 <i class="fas fa-chevron-left"></i> Anterior
             </button>`;
         }
-        
+
         // Páginas
         for (let i = 1; i <= this.totalPages; i++) {
             if (i === 1 || i === this.totalPages || (i >= this.currentPage - 2 && i <= this.currentPage + 2)) {
@@ -647,14 +1153,14 @@ class MediaBatchesManager {
                 paginationHTML += '<span class="pagination-ellipsis">...</span>';
             }
         }
-        
+
         // Botão próximo
         if (this.currentPage < this.totalPages) {
             paginationHTML += `<button class="page-btn btn btn-secondary" data-page="${this.currentPage + 1}">
                 Próximo <i class="fas fa-chevron-right"></i>
             </button>`;
         }
-        
+
         paginationHTML += '</div>';
         container.insertAdjacentHTML('beforeend', paginationHTML);
     }
@@ -726,10 +1232,10 @@ class MediaBatchesManager {
         if (batch.progress && typeof batch.progress.progress === 'number') {
             return Math.round(batch.progress.progress);
         }
-        
+
         const total = batch.totalSends || 0;
         const sent = batch.sent || 0;
-        
+
         if (total === 0) return 0;
         return Math.round((sent / total) * 100);
     }
@@ -737,9 +1243,9 @@ class MediaBatchesManager {
     async cancelBatch(batchId) {
         try {
             if (!confirm('Tem certeza que deseja cancelar este lote?')) return;
-            
+
             const response = await this.safeApiRequest('PUT', `/api/media/batches/${batchId}/cancel`);
-            
+
             if (response.success) {
                 this.safeShowNotification('✅ Lote cancelado com sucesso', 'success');
                 this.loadMediaBatches(this.currentPage);
@@ -755,9 +1261,9 @@ class MediaBatchesManager {
     async deleteBatch(batchId) {
         try {
             if (!confirm('Tem certeza que deseja excluir este lote? Esta ação não pode ser desfeita.')) return;
-            
+
             const response = await this.safeApiRequest('DELETE', `/api/media/batches/${batchId}`);
-            
+
             if (response.success) {
                 this.safeShowNotification('✅ Lote excluído com sucesso', 'success');
                 this.loadMediaBatches(this.currentPage);
@@ -770,11 +1276,45 @@ class MediaBatchesManager {
         }
     }
 
+    // ✅ ATUALIZAR O MÉTODO reuseBatch para carregar mídias como base64
     async reuseBatch(batchId) {
         try {
+            console.log(`🔄 Reutilizando lote: ${batchId}`);
             const response = await this.safeApiRequest('GET', `/api/media/batches/${batchId}`);
-            
+
             if (response.success) {
+                console.log('✅ Batch carregado para reutilização:', response.batch);
+
+                // ✅ CARREGAR MÍDIAS COMO BASE64
+                if (response.batch.mediaItems && response.batch.mediaItems.length > 0) {
+                    console.log('🖼️ Carregando mídias como base64...');
+
+                    // Podemos carregar as primeiras 3-5 imagens em base64 para preview
+                    const previewMediaItems = response.batch.mediaItems.slice(0, 5);
+
+                    for (let i = 0; i < previewMediaItems.length; i++) {
+                        const media = previewMediaItems[i];
+                        if (media.mimeType && media.mimeType.startsWith('image/')) {
+                            try {
+                                const urlParts = media.url.split('/');
+                                const userId = urlParts[urlParts.length - 2];
+                                const filename = urlParts[urlParts.length - 1];
+
+                                const mediaResponse = await this.safeApiRequest(
+                                    'GET',
+                                    `/api/media/media/${userId}/${filename}`
+                                );
+
+                                if (mediaResponse.success) {
+                                    response.batch.mediaItems[i].base64Data = mediaResponse.data;
+                                }
+                            } catch (error) {
+                                console.warn(`⚠️ Não foi possível carregar imagem ${i} como base64:`, error);
+                            }
+                        }
+                    }
+                }
+
                 this.showMediaBatchModal(response.batch);
             } else {
                 throw new Error(response.error);
@@ -788,7 +1328,7 @@ class MediaBatchesManager {
     async viewBatchDetails(batchId) {
         try {
             const response = await this.safeApiRequest('GET', `/api/media/batches/${batchId}`);
-            
+
             if (response.success) {
                 this.showBatchDetailsModal(response.batch);
             } else {
@@ -827,11 +1367,33 @@ class MediaBatchesManager {
                                     <span>${batch.contactGroups ? batch.contactGroups.length : 0} grupo(s)</span>
                                 </div>
                                 <div class="detail-item">
+                                    <strong>mensagem:</strong>
+                                    <span>${batch.options.caption || ''}</span>
+                                </div>
+                                <div class="detail-item">
                                     <strong>Criado em:</strong>
                                     <span>${new Date(batch.createdAt).toLocaleString()}</span>
                                 </div>
+                                
                             </div>
                         </div>
+                        
+                        ${batch.caption ? `
+                        <div class="detail-section">
+                            <h4>Legenda</h4>
+                            <div class="caption-display">${batch.caption}</div>
+                        </div>
+                        ` : ''}
+                        
+                        ${batch.mediaItems && batch.mediaItems.length > 0 ? `
+                        <div class="detail-section">
+                            <h4>Mídias (${batch.mediaItems.length})</h4>
+                            <div class="media-preview-grid large">
+                                ${batch.mediaItems.map((media, index) => this.renderMediaPreview(media, index)).join('')}
+                            </div>
+                        </div>
+                        ` : ''}
+                        
                         <div class="detail-section">
                             <h4>Resultados</h4>
                             <div class="results-list">
@@ -842,9 +1404,9 @@ class MediaBatchesManager {
                 </div>
             </div>
         `;
-        
+
         document.body.insertAdjacentHTML('beforeend', modalHTML);
-        
+
         // Configurar evento de fechamento
         document.getElementById('closeBatchDetailsModal').addEventListener('click', () => {
             this.safeCloseModal('batchDetailsModal');
@@ -855,7 +1417,7 @@ class MediaBatchesManager {
         if (!results || results.length === 0) {
             return '<p class="no-results">Nenhum resultado disponível</p>';
         }
-        
+
         return `
             <div class="results-table">
                 ${results.slice(0, 50).map(result => `
@@ -875,11 +1437,11 @@ class MediaBatchesManager {
         try {
             console.log('🔍 Buscando instâncias conectadas...');
             const response = await this.safeApiRequest('GET', '/api/whatsapp/instances');
-            
+
             console.log('📱 Resposta completa da API de instâncias:', response);
-            
+
             if (response.success && Array.isArray(response.instances)) {
-                const availableInstances = response.instances.filter(instance => 
+                const availableInstances = response.instances.filter(instance =>
                     instance.phoneNumber
                 );
                 console.log(`✅ Encontradas ${availableInstances.length} instâncias disponíveis`);
@@ -930,39 +1492,39 @@ class MediaBatchesManager {
         }
     }
 
-    // Métodos para upload de arquivos (mantidos da versão anterior)
+    // Métodos para upload de arquivos
     initFileUpload() {
         const uploadArea = document.getElementById('mediaUploadArea');
         const fileInput = document.getElementById('mediaFilesInput');
-        
+
         if (!uploadArea || !fileInput) {
             console.error('❌ Elementos de upload não encontrados');
             return;
         }
 
         uploadArea.addEventListener('click', () => fileInput.click());
-        
+
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.style.backgroundColor = '#f0f8ff';
             uploadArea.style.borderColor = '#007bff';
         });
-        
+
         uploadArea.addEventListener('dragleave', () => {
             uploadArea.style.backgroundColor = '';
             uploadArea.style.borderColor = '';
         });
-        
+
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.style.backgroundColor = '';
             uploadArea.style.borderColor = '';
-            
+
             if (e.dataTransfer.files.length > 0) {
                 this.handleFiles(e.dataTransfer.files);
             }
         });
-        
+
         fileInput.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 this.handleFiles(e.target.files);
@@ -970,12 +1532,16 @@ class MediaBatchesManager {
         });
     }
 
+    // ATUALIZAR O MÉTODO handleFiles
     handleFiles(files) {
         const preview = document.getElementById('filePreview');
         if (!preview) return;
-        
-        preview.innerHTML = '';
-        
+
+        // Mostrar loading se for muitas imagens
+        if (files.length > 3) {
+            preview.innerHTML = '<div class="loading-text">Processando arquivos...</div>';
+        }
+
         Array.from(files).forEach(file => {
             if (this.isValidFileType(file)) {
                 this.uploadedFiles.push(file);
@@ -996,14 +1562,40 @@ class MediaBatchesManager {
         return validTypes.includes(file.type);
     }
 
+    // NO MediaBatchesManager.js - ATUALIZAR O MÉTODO createFilePreview
+
     createFilePreview(file, container) {
         const preview = document.createElement('div');
         preview.className = 'file-preview-item';
-        
+
         const fileIcon = this.getFileIcon(file.type);
         const fileSize = this.formatFileSize(file.size);
-        
-        preview.innerHTML = `
+
+        // ✅ CORREÇÃO: SE FOR IMAGEM, CRIAR PREVIEW COM IMAGEM REAL
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                preview.innerHTML = `
+                <div class="file-info">
+                    <div class="file-preview-image">
+                        <img src="${e.target.result}" alt="${file.name}" />
+                    </div>
+                    <div class="file-details">
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-size">${fileSize}</div>
+                    </div>
+                    <button type="button" class="remove-file" onclick="this.closest('.file-preview-item').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            };
+
+            reader.readAsDataURL(file);
+        } else {
+            // Para outros tipos de arquivo, manter o ícone
+            preview.innerHTML = `
             <div class="file-info">
                 <i class="${fileIcon}"></i>
                 <div class="file-details">
@@ -1015,7 +1607,8 @@ class MediaBatchesManager {
                 </button>
             </div>
         `;
-        
+        }
+
         container.appendChild(preview);
     }
 

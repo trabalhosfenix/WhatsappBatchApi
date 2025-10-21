@@ -1,9 +1,10 @@
+
 const MessageBatch = require('../models/MessageBatch');
 const ContactGroup = require('../models/ContactGroup');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const whatsappBaileysService = require('../services/whatsappService');
 
-// ✅ CORREÇÃO: Função auxiliar separada para evitar referência circular
+// ✅ Função auxiliar para processar o lote
 const processBatch = async (batchId) => {
   try {
     console.log(`🔄 Processando lote: ${batchId}`);
@@ -117,6 +118,9 @@ const processBatch = async (batchId) => {
 
         console.log(`📤 Tentando enviar para: ${contact.name} (${jid})`);
 
+        // ✅ AQUI PODEMOS ADICIONAR RATE LIMITING SE NECESSÁRIO
+        // Exemplo: await rateLimitService.checkAndWait(whatsappInstance._id);
+
         const messageResult = await whatsappBaileysService.sendMessageToContact(
           whatsappInstance.sessionName,
           jid,
@@ -193,27 +197,98 @@ const processBatch = async (batchId) => {
   }
 };
 
-// ✅ CORREÇÃO: Exportar a função
-exports.processBatch = async (batchId) => {
-  for (const contact of allContacts) {
-    // ✅ VERIFICAR RATE LIMIT ANTES DE ENVIAR
-    const limitCheck = await rateLimitService.checkLimit(
-      whatsappInstance._id, 
-      'message'
-    );
-    
-    if (!limitCheck.allowed) {
-      console.log(`⏳ Rate limit atingido, aguardando ${limitCheck.waitTime}ms`);
-      await new Promise(resolve => setTimeout(resolve, limitCheck.waitTime));
+// ✅ Exportar a função processBatch
+exports.processBatch = processBatch;
+
+exports.createBatch = async (req, res) => {
+  try {
+    const { name, message, contactGroupIds, whatsappInstanceId, options } = req.body;
+
+    if (!name || !message || !contactGroupIds || !whatsappInstanceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nome, mensagem, grupos de contatos e instância WhatsApp são obrigatórios'
+      });
     }
-    
-    // ✅ ENVIO COM PROTEÇÃO
-    await whatsappBaileysService.sendMessageToContact(
-      whatsappInstance.sessionName,
-      contact.jid,
-      batch.message
-    );
-    
+
+    const whatsappInstance = await WhatsAppInstance.findOne({
+      _id: whatsappInstanceId,
+      userId: req.user._id
+    });
+
+    if (!whatsappInstance) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância WhatsApp não encontrada'
+      });
+    }
+
+    if (whatsappInstance.status !== 'connected') {
+      return res.status(400).json({
+        success: false,
+        error: 'Instância WhatsApp não está conectada'
+      });
+    }
+
+    const contactGroups = await ContactGroup.find({
+      _id: { $in: contactGroupIds },
+      userId: req.user._id
+    });
+
+    if (contactGroups.length !== contactGroupIds.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'Um ou mais grupos de contatos não foram encontrados'
+      });
+    }
+
+    const totalContacts = contactGroups.reduce((total, group) => total + group.contactCount, 0);
+
+    if (totalContacts === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Os grupos selecionados não possuem contatos'
+      });
+    }
+
+    const batch = await MessageBatch.create({
+      userId: req.user._id,
+      whatsappInstanceId,
+      name,
+      message,
+      contactGroupIds,
+      progress: {
+        total: totalContacts,
+        sent: 0,
+        failed: 0
+      },
+      options: options || {
+        delayBetweenMessages: 1000,
+        maxRetries: 3
+      }
+    });
+
+    // ✅ Chamar a função de processamento em segundo plano
+    processBatch(batch._id);
+
+    res.status(201).json({
+      success: true,
+      message: 'Lote criado e processamento iniciado',
+      batch: {
+        _id: batch._id,
+        name: batch.name,
+        status: batch.status,
+        progress: batch.progress,
+        createdAt: batch.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao criar lote:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
   }
 };
 

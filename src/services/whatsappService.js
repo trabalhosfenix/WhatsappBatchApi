@@ -401,7 +401,7 @@ class WhatsAppService {
             console.log(`📊 [${sessionName}] Encontrados ${Object.keys(groups).length} grupos no WhatsApp`);
 
 
-          
+
 
             for (const [jid, group] of Object.entries(groups)) {
                 try {
@@ -465,6 +465,7 @@ class WhatsAppService {
             throw error;
         }
     }
+
     async recreateInstance(sessionName, userId) {
         try {
             console.log(`🔄 [WhatsAppService] Recriando instância: ${sessionName}`);
@@ -542,7 +543,7 @@ class WhatsAppService {
     }
 
     extractParticipantsAsContacts(participants) {
-     
+
         if (!participants || !Array.isArray(participants)) {
             return [];
         }
@@ -733,255 +734,522 @@ class WhatsAppService {
             };
         }
 
-            // Se for para enviar como documento, forçar tipo
-            if (options.sendAsDocument) {
-                messageOptions = {
-                    document: {
-                        url: mediaUrl
-                    },
-                    caption: finalCaption,
-                    mimetype: mediaItem.mimeType,
-                    fileName: mediaItem.originalName
-                };
-            }
-
-            console.log(`🚀 [${sessionName}] Enviando mídia para: ${formattedJid}`, {
-                type: Object.keys(messageOptions)[0],
-                hasCaption: !!finalCaption,
+        // Se for para enviar como documento, forçar tipo
+        if (options.sendAsDocument) {
+            messageOptions = {
+                document: {
+                    url: mediaUrl
+                },
+                caption: finalCaption,
+                mimetype: mediaItem.mimeType,
                 fileName: mediaItem.originalName
-            });
-
-            // Enviar a mensagem
-            const result = await socket.sendMessage(formattedJid, messageOptions);
-
-            console.log(`✅ [${sessionName}] Mídia enviada com sucesso para: ${formattedJid}`, {
-                messageId: result.key?.id,
-                timestamp: new Date().toISOString()
-            });
-
-            return {
-                success: true,
-                messageId: result.key?.id,
-                timestamp: new Date()
-            };
-
-        } catch (error) {
-            console.error(`❌ [${sessionName}] Erro ao enviar mídia para ${jid}:`, error.message);
-
-            // Se for erro de conexão, marcar como desconectado
-            if (error.message.includes('not connected') ||
-                error.message.includes('socket') ||
-                error.message.includes('connection') ||
-                error.message.includes('timeout')) {
-                this.connectionStates.set(sessionName, 'disconnected');
-            }
-
-            return {
-                success: false,
-                error: error.message
             };
         }
+
+        console.log(`🚀 [${sessionName}] Enviando mídia para: ${formattedJid}`, {
+            type: Object.keys(messageOptions)[0],
+            hasCaption: !!finalCaption,
+            fileName: mediaItem.originalName
+        });
+
+        // Enviar a mensagem
+        const result = await socket.sendMessage(formattedJid, messageOptions);
+
+        console.log(`✅ [${sessionName}] Mídia enviada com sucesso para: ${formattedJid}`, {
+            messageId: result.key?.id,
+            timestamp: new Date().toISOString()
+        });
+
+        return {
+            success: true,
+            messageId: result.key?.id,
+            timestamp: new Date()
+        };
+
+    } catch(error) {
+        console.error(`❌ [${sessionName}] Erro ao enviar mídia para ${jid}:`, error.message);
+
+        // Se for erro de conexão, marcar como desconectado
+        if (error.message.includes('not connected') ||
+            error.message.includes('socket') ||
+            error.message.includes('connection') ||
+            error.message.includes('timeout')) {
+            this.connectionStates.set(sessionName, 'disconnected');
+        }
+
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+
 
 
     // FUNÇÃO DE ENVIO SIMPLIFICADA E ROBUSTA
     async sendMessageToContact(sessionName, jid, message) {
-            console.log(`📤 [${sessionName}] Preparando envio para: ${jid}`);
+        console.log(`📤 [${sessionName}] Preparando envio para: ${jid}`);
 
-            // Verificar estado da conexão
-            const connectionState = this.connectionStates.get(sessionName);
-            if (connectionState !== 'connected') {
-                throw new Error(`Instância não está conectada. Estado: ${connectionState}`);
-            }
-
-            const socket = this.sockets.get(sessionName);
-            if (!socket || !socket.user) {
-                throw new Error('Socket não disponível ou não autenticado');
-            }
-
-            try {
-                // Formatar JID
-                let formattedJid = jid;
-                if (!jid.includes('@')) {
-                    const phone = jid.replace(/\D/g, '');
-                    formattedJid = `${phone}@s.whatsapp.net`;
-                }
-
-                console.log(`🚀 [${sessionName}] Enviando mensagem para: ${formattedJid}`);
-
-                // Envio direto sem verificações complexas
-                const result = await socket.sendMessage(formattedJid, { text: message });
-
-                console.log(`✅ [${sessionName}] Mensagem enviada com sucesso para: ${formattedJid}`);
-                return result;
-
-            } catch (error) {
-                console.error(`❌ [${sessionName}] Erro ao enviar para ${jid}:`, error.message);
-
-                // Se for erro de conexão, marcar como desconectado
-                if (error.message.includes('not connected') || error.message.includes('socket') || error.message.includes('connection')) {
-                    this.connectionStates.set(sessionName, 'disconnected');
-                }
-
-                throw error;
-            }
+        // Verificar estado da conexão
+        const connectionState = this.connectionStates.get(sessionName);
+        if (connectionState !== 'connected') {
+            throw new Error(`Instância não está conectada. Estado: ${connectionState}`);
         }
+
+        const socket = this.sockets.get(sessionName);
+        if (!socket || !socket.user) {
+            throw new Error('Socket não disponível ou não autenticado');
+        }
+
+        try {
+            // Formatar JID
+            let formattedJid = jid;
+            if (!jid.includes('@')) {
+                const phone = jid.replace(/\D/g, '');
+                formattedJid = `${phone}@s.whatsapp.net`;
+            }
+
+            console.log(`🚀 [${sessionName}] Enviando mensagem para: ${formattedJid}`);
+
+            // Envio direto sem verificações complexas
+            const result = await socket.sendMessage(formattedJid, { text: message });
+
+            console.log(`✅ [${sessionName}] Mensagem enviada com sucesso para: ${formattedJid}`);
+            return result;
+
+        } catch (error) {
+            console.error(`❌ [${sessionName}] Erro ao enviar para ${jid}:`, error.message);
+
+            // Se for erro de conexão, marcar como desconectado
+            if (error.message.includes('not connected') || error.message.includes('socket') || error.message.includes('connection')) {
+                this.connectionStates.set(sessionName, 'disconnected');
+            }
+
+            throw error;
+        }
+    }
 
     async debugSocket(sessionName) {
-            console.log(`🔍 [DEBUG] Analisando socket: ${sessionName}`);
+        console.log(`🔍 [DEBUG] Analisando socket: ${sessionName}`);
 
-            const socket = this.sockets.get(sessionName);
+        const socket = this.sockets.get(sessionName);
 
-            if (!socket) {
-                console.log(`❌ Socket não encontrado na sessão: ${sessionName}`);
-                console.log(`📋 Sockets disponíveis:`, Array.from(this.sockets.keys()));
-                return;
-            }
-
-            console.log(`✅ Socket encontrado para: ${sessionName}`);
-            console.log(`👤 Usuário autenticado:`, socket.user ? 'Sim' : 'Não');
-            console.log(`📞 Métodos disponíveis:`, Object.keys(socket).filter(key => typeof socket[key] === 'function'));
-            console.log(`🔗 Estado da conexão:`, socket.ws ? 'WebSocket conectado' : 'WebSocket não conectado');
-
-            // Testar método sendMessage
-            if (typeof socket.sendMessage === 'function') {
-                console.log(`✅ Método sendMessage disponível`);
-            } else {
-                console.log(`❌ Método sendMessage NÃO disponível`);
-            }
-
-            return socket;
+        if (!socket) {
+            console.log(`❌ Socket não encontrado na sessão: ${sessionName}`);
+            console.log(`📋 Sockets disponíveis:`, Array.from(this.sockets.keys()));
+            return;
         }
 
-        // Método para buscar todos os sockets ativos
-        getActiveSockets() {
-            const activeSockets = {};
-            for (const [sessionName, socket] of this.sockets.entries()) {
-                activeSockets[sessionName] = {
-                    connected: !!socket.user,
-                    user: socket.user ? socket.user.id : null
-                };
-            }
-            return activeSockets;
+        console.log(`✅ Socket encontrado para: ${sessionName}`);
+        console.log(`👤 Usuário autenticado:`, socket.user ? 'Sim' : 'Não');
+        console.log(`📞 Métodos disponíveis:`, Object.keys(socket).filter(key => typeof socket[key] === 'function'));
+        console.log(`🔗 Estado da conexão:`, socket.ws ? 'WebSocket conectado' : 'WebSocket não conectado');
+
+        // Testar método sendMessage
+        if (typeof socket.sendMessage === 'function') {
+            console.log(`✅ Método sendMessage disponível`);
+        } else {
+            console.log(`❌ Método sendMessage NÃO disponível`);
         }
+
+        return socket;
+    }
+
+    // Método para buscar todos os sockets ativos
+    getActiveSockets() {
+        const activeSockets = {};
+        for (const [sessionName, socket] of this.sockets.entries()) {
+            activeSockets[sessionName] = {
+                connected: !!socket.user,
+                user: socket.user ? socket.user.id : null
+            };
+        }
+        return activeSockets;
+    }
 
     // Método para forçar limpeza de todas as instâncias
     async cleanupAllInstances() {
-            try {
-                console.log('🧹 [WhatsAppService] Limpando todas as instâncias...');
+        try {
+            console.log('🧹 [WhatsAppService] Limpando todas as instâncias...');
 
-                for (const [sessionName, socket] of this.sockets.entries()) {
-                    try {
-                        await socket.end();
-                    } catch (error) {
-                        console.error(`❌ Erro ao limpar socket ${sessionName}:`, error);
-                    }
+            for (const [sessionName, socket] of this.sockets.entries()) {
+                try {
+                    await socket.end();
+                } catch (error) {
+                    console.error(`❌ Erro ao limpar socket ${sessionName}:`, error);
                 }
-
-                this.sockets.clear();
-                this.authStates.clear();
-                this.reconnectionAttempts.clear();
-
-                console.log('✅ [WhatsAppService] Todas as instâncias limpas');
-
-            } catch (error) {
-                console.error('❌ [WhatsAppService] Erro na limpeza geral:', error);
             }
+
+            this.sockets.clear();
+            this.authStates.clear();
+            this.reconnectionAttempts.clear();
+
+            console.log('✅ [WhatsAppService] Todas as instâncias limpas');
+
+        } catch (error) {
+            console.error('❌ [WhatsAppService] Erro na limpeza geral:', error);
         }
+    }
     // services/whatsappService.js - ADICIONE ESTA FUNÇÃO:
 
     async reconnectInstance(sessionName, userId) {
-            try {
-                console.log(`🔄 [WhatsAppService] Tentando reconectar: ${sessionName}`);
+        try {
+            console.log(`🔄 [WhatsAppService] Tentando reconectar: ${sessionName}`);
 
-                // Buscar instância no banco
-                const instance = await WhatsAppInstance.findOne({
-                    sessionName,
-                    userId
-                });
+            // Buscar instância no banco
+            const instance = await WhatsAppInstance.findOne({
+                sessionName,
+                userId
+            });
 
-                if (!instance) {
-                    throw new Error('Instância não encontrada no banco');
-                }
-
-                // Limpar socket existente se houver
-                const existingSocket = this.sockets.get(sessionName);
-                if (existingSocket) {
-                    await existingSocket.end();
-                    this.sockets.delete(sessionName);
-                }
-
-                // Recriar a instância
-                await this.initializeClient(sessionName, userId, instance._id);
-
-                console.log(`✅ [WhatsAppService] Reconexão iniciada para: ${sessionName}`);
-                return true;
-
-            } catch (error) {
-                console.error(`❌ [WhatsAppService] Erro na reconexão:`, error);
-                throw error;
+            if (!instance) {
+                throw new Error('Instância não encontrada no banco');
             }
+
+            // Limpar socket existente se houver
+            const existingSocket = this.sockets.get(sessionName);
+            if (existingSocket) {
+                await existingSocket.end();
+                this.sockets.delete(sessionName);
+            }
+
+            // Recriar a instância
+            await this.initializeClient(sessionName, userId, instance._id);
+
+            console.log(`✅ [WhatsAppService] Reconexão iniciada para: ${sessionName}`);
+            return true;
+
+        } catch (error) {
+            console.error(`❌ [WhatsAppService] Erro na reconexão:`, error);
+            throw error;
         }
+    }
+
+
     async disconnectClient(sessionName) {
-            try {
-                console.log(`🔌 [WhatsAppService] Desconectando: ${sessionName}`);
-                await this.cleanupInstance(sessionName, null, 'disconnected');
-                console.log(`✅ [WhatsAppService] Desconectado: ${sessionName}`);
-            } catch (error) {
-                console.error(`❌ [WhatsAppService] Erro ao desconectar:`, error);
-                throw error;
-            }
+        try {
+            console.log(`🔌 [WhatsAppService] Desconectando: ${sessionName}`);
+            await this.cleanupInstance(sessionName, null, 'disconnected');
+            console.log(`✅ [WhatsAppService] Desconectado: ${sessionName}`);
+        } catch (error) {
+            console.error(`❌ [WhatsAppService] Erro ao desconectar:`, error);
+            throw error;
         }
+    }
 
     // Reconexão segura
     async safeReconnect(sessionName, userId, instanceId) {
-            try {
-                if (this.initializingInstances.has(sessionName)) {
-                    console.log(`⚠️ [${sessionName}] Já está reconectando, ignorando...`);
-                    return;
-                }
-
-                console.log(`🔄 [${sessionName}] Iniciando reconexão segura...`);
-
-                // Limpar socket existente
-                const existingSocket = this.sockets.get(sessionName);
-                if (existingSocket) {
-                    try {
-                        await existingSocket.end();
-                    } catch (err) {
-                        console.log(`⚠️ [${sessionName}] Erro ao finalizar socket: ${err.message}`);
-                    }
-                    this.sockets.delete(sessionName);
-                }
-
-                // Recriar instância
-                await this.initializeClient(sessionName, userId, instanceId);
-
-                console.log(`✅ [${sessionName}] Reconexão segura concluída`);
-
-            } catch (error) {
-                console.error(`❌ [${sessionName}] Erro na reconexão segura:`, error);
-                this.connectionStates.set(sessionName, 'failed');
+        try {
+            if (this.initializingInstances.has(sessionName)) {
+                console.log(`⚠️ [${sessionName}] Já está reconectando, ignorando...`);
+                return;
             }
+
+            console.log(`🔄 [${sessionName}] Iniciando reconexão segura...`);
+
+            // Limpar socket existente
+            const existingSocket = this.sockets.get(sessionName);
+            if (existingSocket) {
+                try {
+                    await existingSocket.end();
+                } catch (err) {
+                    console.log(`⚠️ [${sessionName}] Erro ao finalizar socket: ${err.message}`);
+                }
+                this.sockets.delete(sessionName);
+            }
+
+            // Recriar instância
+            await this.initializeClient(sessionName, userId, instanceId);
+
+            console.log(`✅ [${sessionName}] Reconexão segura concluída`);
+
+        } catch (error) {
+            console.error(`❌ [${sessionName}] Erro na reconexão segura:`, error);
+            this.connectionStates.set(sessionName, 'failed');
         }
-
-    async recreateInstance(sessionName, userId) {
-            return this.safeReconnect(sessionName, userId, null);
-        }
-
-    async getSocketStatus(sessionName) {
-            const socket = this.sockets.get(sessionName);
-            const connectionState = this.connectionStates.get(sessionName);
-
-            return {
-                connected: connectionState === 'connected',
-                connectionState: connectionState,
-                hasSocket: !!socket,
-                hasUser: !!(socket && socket.user)
-            };
-        }
-
-
     }
 
+    async recreateInstance(sessionName, userId) {
+        return this.safeReconnect(sessionName, userId, null);
+    }
+
+    async getSocketStatus(sessionName) {
+        const socket = this.sockets.get(sessionName);
+        const connectionState = this.connectionStates.get(sessionName);
+
+        return {
+            connected: connectionState === 'connected',
+            connectionState: connectionState,
+            hasSocket: !!socket,
+            hasUser: !!(socket && socket.user)
+        };
+    }
+
+
+
+    // 📝 ATUALIZE o método loadContactsWithDetails no whatsappService.js
+
+    async loadContactsWithDetails(sessionName, userId, instanceId) {
+        try {
+            const socket = this.sockets.get(sessionName);
+            if (!socket) {
+                throw new Error('Instância não conectada');
+            }
+
+            console.log(`📞 [${sessionName}] Coletando contatos com detalhes completos...`);
+
+            // Buscar todos os contatos
+            const contacts = await socket.getContacts();
+            console.log(`📊 [${sessionName}] ${contacts.length} contatos brutos encontrados`);
+
+            const enrichedContacts = [];
+            const batchSize = 3; // Reduzido para evitar bloqueio
+            let processed = 0;
+
+            for (let i = 0; i < contacts.length; i += batchSize) {
+                const batch = contacts.slice(i, i + batchSize);
+                console.log(`🔄 [${sessionName}] Processando lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(contacts.length / batchSize)}`);
+
+                // Processar cada contato individualmente
+                for (const contact of batch) {
+                    try {
+                        // Pular contatos inválidos ou grupos
+                        if (!contact.id ||
+                            contact.id.server === 'g.us' ||
+                            contact.id.server === 'broadcast' ||
+                            !contact.id._serialized) {
+                            continue;
+                        }
+
+                        // ✅ USAR O NOVO MÉTODO DE PROCESSAMENTO INDIVIDUAL
+                        const enrichedContact = await this.processIndividualContact(
+                            sessionName,
+                            contact.id._serialized
+                        );
+
+                        if (enrichedContact) {
+                            enrichedContacts.push(enrichedContact);
+                            processed++;
+
+                            console.log(`✅ [${sessionName}] ${processed}/${contacts.length} - ${enrichedContact.name}`);
+                        }
+
+                    } catch (contactError) {
+                        console.warn(`⚠️ [${sessionName}] Erro no contato ${contact.id?._serialized}:`, contactError.message);
+                    }
+                }
+
+                // Delay maior entre lotes para evitar bloqueio
+                console.log(`⏳ [${sessionName}] Aguardando 3 segundos...`);
+                await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+
+            console.log(`🎉 [${sessionName}] Processamento concluído: ${enrichedContacts.length} contatos enriquecidos`);
+
+            // Salvar no banco
+            const contactGroup = await ContactGroup.findOneAndUpdate(
+                {
+                    userId: userId,
+                    name: `Contatos ${sessionName}`,
+                    source: 'whatsapp'
+                },
+                {
+                    userId: userId,
+                    name: `Contatos ${sessionName}`,
+                    description: `Contatos completos da instância ${sessionName}`,
+                    contacts: enrichedContacts,
+                    source: 'whatsapp',
+                    whatsappInstanceId: instanceId,
+                    contactCount: enrichedContacts.length,
+                    syncStatus: 'completed',
+                    lastSync: new Date(),
+                    metadata: {
+                        totalFound: contacts.length,
+                        successfullyProcessed: enrichedContacts.length,
+                        hasProfilePictures: enrichedContacts.filter(c => c.profilePicture).length,
+                        businessAccounts: enrichedContacts.filter(c => c.isBusiness).length
+                    }
+                },
+                {
+                    upsert: true,
+                    new: true
+                }
+            );
+
+            console.log(`💾 [${sessionName}] Contatos salvos no grupo: ${contactGroup._id}`);
+
+            return {
+                success: true,
+                totalContacts: contacts.length,
+                processedContacts: enrichedContacts.length,
+                groupId: contactGroup._id
+            };
+
+        } catch (error) {
+            console.error(`❌ [${sessionName}] Erro ao carregar contatos com detalhes:`, error);
+            throw error;
+        }
+    }
+
+    /**
+ * Processa um contato individualmente com todas as informações disponíveis
+ */
+    async processIndividualContact(sessionName, contactId) {
+        try {
+            console.log(`🔍 [${sessionName}] Processando contato individual: ${contactId}`);
+
+            const socket = this.sockets.get(sessionName);
+            if (!socket) {
+                throw new Error('Socket não disponível');
+            }
+
+            // 1. Buscar informações básicas do contato
+            const contact = await socket.getContact(contactId);
+            if (!contact) {
+                console.log(`⚠️ [${sessionName}] Contato não encontrado: ${contactId}`);
+                return null;
+            }
+
+            // 2. Coletar informações adicionais em paralelo
+            const [profilePicture, status, lastSeen] = await Promise.allSettled([
+                this.getProfilePicture(sessionName, contactId),
+                this.getStatus(sessionName, contactId),
+                this.getLastSeen(sessionName, contactId)
+            ]).then(results => results.map(result =>
+                result.status === 'fulfilled' ? result.value : null
+            ));
+
+            // 3. Estruturar dados completos do contato
+            const contactData = {
+                // Informações básicas
+                name: contact.name || contact.pushname || contact.verifiedName || '',
+                pushName: contact.pushname || '',
+                shortName: contact.shortName || '',
+
+                // Identificação
+                phone: contact.id.user,
+                whatsappId: contact.id._serialized,
+
+                // Informações de perfil
+                profilePicture: profilePicture || '',
+                status: status || '',
+                lastSeen: lastSeen,
+
+                // Informações de negócio
+                isBusiness: contact.business || false,
+                businessName: contact.businessName || '',
+                businessCategory: contact.businessCategory || '',
+                verified: contact.verified || false,
+
+                // Metadados
+                isGroup: contact.id.server === 'g.us',
+                platform: 'whatsapp',
+                syncDate: new Date()
+            };
+
+            console.log(`✅ [${sessionName}] Contato processado: ${contactData.name} (${contactData.phone})`);
+
+            return contactData;
+
+        } catch (error) {
+            console.error(`❌ [${sessionName}] Erro ao processar contato ${contactId}:`, error.message);
+            return null;
+        }
+    }
+
+    /**
+     * Busca foto de perfil do contato
+     */
+    async getProfilePicture(sessionName, contactId) {
+        try {
+            const socket = this.sockets.get(sessionName);
+            if (!socket) return null;
+
+            const profilePic = await socket.getProfilePicture(contactId);
+            return profilePic || null;
+        } catch (error) {
+            // Foto não disponível é comum, não logar como erro
+            return null;
+        }
+    }
+
+    /**
+     * Busca status do contato
+     */
+    async getStatus(sessionName, contactId) {
+        try {
+            const socket = this.sockets.get(sessionName);
+            if (!socket) return null;
+
+            const status = await socket.getStatus(contactId);
+            return status || '';
+        } catch (error) {
+            return null;
+        }
+    }
+
+    /**
+     * Busca último visto do contato
+     */
+    async getLastSeen(sessionName, contactId) {
+        try {
+            const socket = this.sockets.get(sessionName);
+            if (!socket) return null;
+
+            // Em alguns casos, o lastSeen vem no próprio contato
+            const contact = await socket.getContact(contactId);
+            return contact.lastSeen ? new Date(contact.lastSeen * 1000) : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // ✅ NOVO: Método para debug de contatos
+    async debugContacts(sessionName) {
+        try {
+            const socket = this.sockets.get(sessionName);
+            if (!socket) {
+                throw new Error('Socket não encontrado');
+            }
+
+            console.log(`🔍 [DEBUG] Analisando contatos para: ${sessionName}`);
+
+            const contacts = await socket.getContacts();
+            console.log(`📞 Total de contatos: ${contacts.length}`);
+
+            if (contacts.length > 0) {
+                const sampleContact = contacts[0];
+                console.log('📋 ESTRUTURA DO CONTATO:', {
+                    id: sampleContact.id,
+                    name: sampleContact.name,
+                    notify: sampleContact.notify,
+                    verifiedName: sampleContact.verifiedName,
+                    business: sampleContact.business,
+                    businessName: sampleContact.businessName,
+                    verified: sampleContact.verified
+                });
+
+                // Testar métodos
+                try {
+                    const profilePic = await socket.getProfilePicture(sampleContact.id._serialized);
+                    console.log('🖼️ Foto disponível:', !!profilePic);
+                } catch (error) {
+                    console.log('🖼️ Foto:', error.message);
+                }
+
+                try {
+                    const status = await socket.getStatus(sampleContact.id._serialized);
+                    console.log('📝 Status disponível:', !!status);
+                } catch (error) {
+                    console.log('📝 Status:', error.message);
+                }
+            }
+
+            return contacts.length;
+        } catch (error) {
+            console.error('❌ Erro no debug:', error);
+            throw error;
+        }
+    }
+}
 // Exportar singleton
 module.exports = new WhatsAppService();

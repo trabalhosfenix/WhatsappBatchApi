@@ -16,7 +16,7 @@ app.listen(PORT, () => {
   // Iniciar cleanup automático após 30 segundos
   setTimeout(() => {
     instanceCleanup.startAutoCleanup();
-  }, 30000);
+  }, 120000);
 });
 
 // Graceful shutdown
