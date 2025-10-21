@@ -30,10 +30,31 @@ const app = express();
 app.use(helmet({
   contentSecurityPolicy: false
 }));
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-  credentials: true
-}));
+
+
+const allowedOrigins = (process.env.CORS_ORIGIN || '*')
+  .split(',')
+  .map(o => o.trim());
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Permite requests sem "origin" (ex: mobile, Postman, server-side)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        return callback(null, true);
+      } else {
+        console.warn(`❌ CORS bloqueado: ${origin}`);
+        return callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  })
+);
+
+
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
