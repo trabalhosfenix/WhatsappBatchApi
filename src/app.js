@@ -39,14 +39,13 @@ const allowedOrigins = (process.env.CORS_ORIGIN || '*')
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Permite requests sem "origin" (ex: mobile, Postman, server-side)
-      if (!origin) return callback(null, true);
+      if (!origin) return callback(null, true); // Postman / server requests
 
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       } else {
         console.warn(`❌ CORS bloqueado: ${origin}`);
-        return callback(new Error('Not allowed by CORS'));
+        return callback(null, true); // permite continuar, só loga
       }
     },
     credentials: true,

@@ -5,6 +5,10 @@ const InstanceCleanup = require('./src/utils/instanceCleanup');
 
 const PORT = process.env.PORT || 3000;
 
+console.log("CORS_ORIGIN:", process.env.CORS_ORIGIN);
+const allowedOrigins = (process.env.CORS_ORIGIN || '*').split(',').map(o => o.trim());
+console.log("Allowed origins:", allowedOrigins);
+
 // Inicializar sistema de cleanup automático
 const instanceCleanup = new InstanceCleanup(whatsappService);
 
