@@ -183,6 +183,12 @@ class AgendaManager {
                 this.filterContacts();
             });
         }
+        const addContactBtn = document.getElementById('addContactBtn');
+        if (addContactBtn) {
+            addContactBtn.addEventListener('click', () => {
+                this.showNewContactModal();
+            });
+        }
 
         const sortContacts = document.getElementById('sortContacts');
         if (sortContacts) {
@@ -300,6 +306,167 @@ class AgendaManager {
         }
     }
 
+    // NOVO: Mostrar modal de novo contato
+    showNewContactModal() {
+        this.loadGroupsForModal().then(() => {
+            const modalHTML = `
+            <div id="newContactModal" class="modal">
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>Novo Contato</h3>
+                        <button class="close">&times;</button>
+                    </div>
+                    <form id="newContactForm" class="modal-form">
+                        <div class="form-group">
+                            <label for="newContactName">Nome *</label>
+                            <input type="text" id="newContactName" required placeholder="Nome completo">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="newContactPhone">Telefone *</label>
+                            <input type="tel" id="newContactPhone" required placeholder="(11) 99999-9999">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="newContactGroups">Grupos *</label>
+                            <select id="newContactGroups" multiple required style="height: 120px;">
+                                ${this.groups.map(group =>
+                `<option value="${group._id}">${this.escapeHtml(group.name)}</option>`
+            ).join('')}
+                            </select>
+                            <small>Segure Ctrl para selecionar múltiplos grupos</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="newContactEmail">Email (opcional)</label>
+                            <input type="email" id="newContactEmail" placeholder="email@exemplo.com">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="newContactNotes">Observações</label>
+                            <textarea id="newContactNotes" rows="3" placeholder="Informações adicionais..."></textarea>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary modal-cancel">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Salvar Contato</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+
+            const existingModal = document.getElementById('newContactModal');
+            if (existingModal) existingModal.remove();
+
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            const modal = document.getElementById('newContactModal');
+
+            // Configurar eventos do modal
+            const closeBtn = modal.querySelector('.close');
+            const cancelBtn = modal.querySelector('.modal-cancel');
+
+            closeBtn.addEventListener('click', () => modal.remove());
+            cancelBtn.addEventListener('click', () => modal.remove());
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+
+            // Configurar submit do formulário
+            const form = document.getElementById('newContactForm');
+            form.addEventListener('submit', (e) => this.handleNewContactSubmit(e));
+
+            modal.style.display = 'block';
+        });
+    }
+
+    // NOVO: Carregar grupos para o modal
+    async loadGroupsForModal() {
+        if (this.groups.length === 0) {
+            await this.loadGroups();
+        }
+    }
+
+    // NOVO: Processar criação de novo contato
+    async handleNewContactSubmit(event) {
+        event.preventDefault();
+
+        const form = event.target;
+        const formData = {
+            name: document.getElementById('newContactName').value.trim(),
+            phone: document.getElementById('newContactPhone').value.trim(),
+            groupIds: Array.from(document.getElementById('newContactGroups').selectedOptions)
+                .map(option => option.value),
+            email: document.getElementById('newContactEmail').value.trim(),
+            notes: document.getElementById('newContactNotes').value.trim(),
+            platform: 'manual' // Sempre manual para contatos criados aqui
+        };
+
+        // Validação básica
+        if (!formData.name || !formData.phone || formData.groupIds.length === 0) {
+            this.showNotification('Preencha todos os campos obrigatórios', 'error');
+            return;
+        }
+
+        try {
+            this.showLoading();
+
+            // Para cada grupo selecionado, adicionar o contato
+            for (const groupId of formData.groupIds) {
+                await this.addContactToGroup(groupId, {
+                    name: formData.name,
+                    phone: formData.phone,
+                    email: formData.email,
+                    notes: formData.notes,
+                    platform: 'manual'
+                });
+            }
+
+            this.showNotification('Contato criado com sucesso!', 'success');
+
+            // Fechar modal e recarregar contatos
+            document.getElementById('newContactModal').remove();
+            await this.loadContacts();
+
+        } catch (error) {
+            console.error('Erro ao criar contato:', error);
+            this.showNotification('Erro ao criar contato: ' + error.message, 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    // NOVO: Adicionar contato a um grupo específico
+    async addContactToGroup(groupId, contactData) {
+        try {
+            const response = await this.apiRequest(`/api/contact-groups/${groupId}/contacts`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    contacts: [{
+                        name: contactData.name,
+                        phone: contactData.phone,
+                        platform: 'manual',
+                        customFields: {
+                            email: contactData.email,
+                            notes: contactData.notes
+                        }
+                    }]
+                })
+            });
+
+            if (!response.success) {
+                throw new Error(response.error || 'Erro ao adicionar contato ao grupo');
+            }
+
+            return response;
+        } catch (error) {
+            console.error(`Erro ao adicionar contato ao grupo ${groupId}:`, error);
+            throw error;
+        }
+    }
+
+
     // NOVO MÉTODO SIMPLIFICADO - substituir o setupModalEvents existente
     setupModalEvents() {
         // ✅ FECHAMENTO SIMPLES - sem setTimeout complexo
@@ -336,6 +503,13 @@ class AgendaManager {
             this.updateStats();
             // ✅ RENDERIZAR FILTROS DE INSTÂNCIAS
             this.renderInstanceFilters();
+            this.state.filters.platform = 'manual';
+            // Aplicar o filtro inicial
+            setTimeout(() => {
+                this.filterContacts();
+            }, 1000);
+
+
 
         } catch (error) {
             console.error('Erro ao carregar dados iniciais:', error);
@@ -536,14 +710,15 @@ class AgendaManager {
                 <i class="fas fa-address-book"></i>
                 <h3>Nenhum contato encontrado</h3>
                 <p>Adicione contatos através dos grupos ou importe do WhatsApp</p>
-                <button class="btn btn-primary" onclick="agendaManager.showWhatsAppInstancesModal()">
+                  <!-- <button class="btn btn-primary" onclick="agendaManager.showWhatsAppInstancesModal()">
                     <i class="fab fa-whatsapp"></i>
                     Importar do WhatsApp
-                </button>
+                </button> -->
             </div>
         `;
             return;
         }
+        
 
         contactsList.innerHTML = contacts.map(contact => `
         <div class="contact-card" data-contact-id="${contact._id}">
@@ -889,6 +1064,11 @@ class AgendaManager {
     renderAdvancedFilters() {
         const advancedFilters = document.getElementById('advancedFilters');
         if (!advancedFilters) return;
+
+        const filterPlatform = document.getElementById('filterPlatform');
+        if (filterPlatform) {
+            filterPlatform.value = 'manual';
+        }
 
         advancedFilters.innerHTML = `
         <div class="filter-group">
@@ -1278,6 +1458,13 @@ class AgendaManager {
         let filteredContacts = this.contacts;
         console.log(`🔍 Aplicando filtros aos contatos... ${JSON.stringify(this.state.filters)}`);
         console.log('Contatos antes do filtro:', filteredContacts);
+
+        // ✅ FILTRO DE PLATAFORMA (agora com padrão 'manual')
+        if (this.state.filters.platform) {
+            filteredContacts = filteredContacts.filter(contact =>
+                contact.platform === this.state.filters.platform
+            );
+        }
 
         // Filtro de busca
         if (this.state.filters.search) {

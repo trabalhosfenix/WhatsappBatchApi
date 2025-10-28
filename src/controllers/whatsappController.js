@@ -26,14 +26,14 @@ exports.createInstance = async (req, res) => {
     const instance = await whatsappBaileysService.createClient(sessionName, req.user._id);
     const updatedInstance = await WhatsAppInstance.findById(instance._id);
 
-    setTimeout(async () => {
-      try {
-        await messageControlService.enableMessageTracking(sessionName);
-        console.log(`✅ Tracking ativado automaticamente para: ${sessionName}`);
-      } catch (trackingError) {
-        console.error(`❌ Erro no tracking automático:`, trackingError);
-      }
-    }, 3000);
+    // setTimeout(async () => {
+    //   try {
+    //     await messageControlService.enableMessageTracking(sessionName);
+    //     console.log(`✅ Tracking ativado automaticamente para: ${sessionName}`);
+    //   } catch (trackingError) {
+    //     console.error(`❌ Erro no tracking automático:`, trackingError);
+    //   }
+    // }, 3000);
 
     res.status(201).json({
       success: true,
