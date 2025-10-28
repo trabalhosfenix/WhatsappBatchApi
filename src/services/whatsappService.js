@@ -198,29 +198,29 @@ class WhatsAppService {
             this.connectionStates.set(sessionName, 'connected');
 
 
-            socket.ev.on("messages.upsert", async ({ messages, type }) => {
-                const msg = messages[0]
-                if (!msg.message || !msg.key.id) return
+            // socket.ev.on("messages.upsert", async ({ messages, type }) => {
+            //     const msg = messages[0]
+            //     if (!msg.message || !msg.key.id) return
 
-                const uniqueId = `${msg.key.remoteJid}_${msg.key.id}_${type}`
+            //     const uniqueId = `${msg.key.remoteJid}_${msg.key.id}_${type}`
 
-                // if (messageCache.has(uniqueId)) {
-                //     console.log(`⏩ Ignorando duplicata: ${msg.key.id}`)
-                //     return
-                // }
+            //     // if (messageCache.has(uniqueId)) {
+            //     //     console.log(`⏩ Ignorando duplicata: ${msg.key.id}`)
+            //     //     return
+            //     // }
 
-                messageCache.add(uniqueId)
+            //     messageCache.add(uniqueId)
 
-                // Limpa após 30 segundos (opcional)
-                // setTimeout(() => messageCache.delete(uniqueId), 30000)
+            //     // Limpa após 30 segundos (opcional)
+            //     // setTimeout(() => messageCache.delete(uniqueId), 30000)
 
-                try {
-                    //    console.log("📩 Mensagem recebida:", msg.message)
-                    await handleMessage(socket, msg)
-                } catch (error) {
-                    console.error('❌ Erro:', error)
-                }
-            })
+            //     try {
+            //         //    console.log("📩 Mensagem recebida:", msg.message)
+            //         await handleMessage(socket, msg)
+            //     } catch (error) {
+            //         console.error('❌ Erro:', error)
+            //     }
+            // })
 
 
             return socket;
