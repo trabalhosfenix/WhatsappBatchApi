@@ -196,4 +196,6 @@ router.get('/batches', mediaBatchController.getMediaBatches);
 router.get('/batches/:id', mediaBatchController.getMediaBatch);
 router.put('/batches/:id/cancel', mediaBatchController.cancelMediaBatch);
 
+router.delete('/batches/:id', mediaBatchController.deleteMediaBatch);
+
 module.exports = router;

@@ -285,22 +285,22 @@ class MediaService {
                     console.log(`🖋️ Legenda final: "${caption}"`);
 
 
-                  const sendOptions = {
-                    ...batch.options,
-                    caption: caption // ← GARANTIR QUE O CAPTION VAI
-                };
+                    const sendOptions = {
+                        ...batch.options,
+                        caption: caption // ← GARANTIR QUE O CAPTION VAI
+                    };
 
-                   
-                console.log('📝 Opções:', sendOptions);
-                console.log('🖋️ Legenda:', `"${caption}"`);
 
-                const messageResult = await whatsappBaileysService.sendMediaToContact(
-                    instance.sessionName,
-                    jid,
-                    mediaItem,
-                    caption, // ← PASSAR CAPTION DIRETAMENTE
-                    sendOptions // ← PASSAR OPTIONS COM CAPTION
-                );
+                    console.log('📝 Opções:', sendOptions);
+                    console.log('🖋️ Legenda:', `"${caption}"`);
+
+                    const messageResult = await whatsappBaileysService.sendMediaToContact(
+                        instance.sessionName,
+                        jid,
+                        mediaItem,
+                        caption, // ← PASSAR CAPTION DIRETAMENTE
+                        sendOptions // ← PASSAR OPTIONS COM CAPTION
+                    );
 
                     sentCount++;
                     results.push({
@@ -394,6 +394,28 @@ class MediaService {
         }
     }
 
+    // ✅ FUNÇÃO PARA EXCLUIR ARQUIVOS DE MÍDIA
+    async deleteMediaFile (fileUrl, userId) {
+        try {
+            // Extrair nome do arquivo da URL
+            const filename = path.basename(fileUrl);
+            const userUploadDir = path.join(uploadDir, userId.toString());
+            const filePath = path.join(userUploadDir, filename);
+
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`✅ Arquivo excluído: ${filename}`);
+                return true;
+            }
+
+            console.log(`⚠️ Arquivo não encontrado: ${filename}`);
+            return false;
+        } catch (error) {
+            console.error(`❌ Erro ao excluir arquivo:`, error);
+            throw error;
+        }
+    };
+
     async markBatchAsFailed(batchId, error) {
         await MediaBatch.findByIdAndUpdate(batchId, {
             status: 'failed',
@@ -409,6 +431,7 @@ class MediaService {
             }
         });
     }
+
     // Limpar arquivos temporários
     async cleanupMediaFiles(userId) {
         try {

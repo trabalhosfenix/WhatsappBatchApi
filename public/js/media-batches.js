@@ -5,6 +5,7 @@ class MediaBatchesManager {
         this.currentModal = null;
         this.currentPage = 1;
         this.totalPages = 1;
+        this.pollingInterval = null; // Controle do polling
         console.log('✅ MediaBatchesManager inicializado');
     }
 
@@ -31,6 +32,13 @@ class MediaBatchesManager {
 
         // Adicionar event delegation para os botões dos batches
         this.setupBatchEvents();
+
+        // Iniciar polling para atualização em tempo real
+        this.startProgressPolling();
+
+        // Configurar limpeza ao fechar página
+        window.addEventListener('beforeunload', () => this.destroy());
+
     }
 
     setupBatchEvents() {
@@ -65,6 +73,69 @@ class MediaBatchesManager {
             }
         });
     }
+
+    startProgressPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+        }
+
+        this.pollingInterval = setInterval(() => {
+            this.updateBatchesProgress();
+        }, 5000); // Atualiza a cada 5 segundos
+    }
+
+    async updateBatchesProgress() {
+        try {
+            // const response = await this.safeApiRequest('GET', `/api/media/batches?page=${this.currentPage}&limit=10`);
+
+            if (response.success && response.batches?.length > 0) {
+                this.updateBatchCardsProgress(response.batches);
+            }
+        } catch (error) {
+            console.warn('⚠️ Erro ao atualizar progresso:', error);
+        }
+    }
+
+    updateBatchCardsProgress(batches) {
+        batches.forEach(batch => {
+            const card = document.querySelector(`.batch-card[data-batch-id="${batch._id}"]`);
+            if (!card) return;
+
+            const progressFill = card.querySelector('.progress-fill');
+            const progressText = card.querySelector('.batch-progress span');
+            const sentCount = card.querySelector('.info-item:nth-child(3) span');
+            const progressPercent = this.calculateProgress(batch);
+
+            // Atualizar barra de progresso
+            if (progressFill) {
+                progressFill.style.width = `${progressPercent}%`;
+            }
+            if (progressText) {
+                progressText.textContent = `${progressPercent}%`;
+            }
+
+            // Atualizar contador de envios
+            if (sentCount) {
+                sentCount.textContent = `${batch.sent || 0}/${batch.totalSends || 0} enviados`;
+            }
+
+            // Atualizar status se necessário
+            const statusSpan = card.querySelector('.batch-status');
+            if (statusSpan) {
+                statusSpan.className = `batch-status ${batch.status}`;
+                statusSpan.textContent = this.getStatusText(batch.status);
+            }
+        });
+    }
+
+    destroy() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
+    }
+
+
 
     setupPaginationEvents() {
         document.addEventListener('click', (e) => {
@@ -324,29 +395,106 @@ class MediaBatchesManager {
     renderExistingMediaInfo(batchData) {
         if (!batchData.mediaItems || batchData.mediaItems.length === 0) {
             return `
-                <div class="existing-media-info">
-                    <p><strong>Mídias existentes no lote:</strong> Nenhuma mídia encontrada</p>
-                </div>
-            `;
+            <div class="existing-media-info">
+                <p><strong>Mídias existentes no lote:</strong> Nenhuma mídia encontrada</p>
+            </div>
+        `;
         }
 
-        const mediaItems = batchData.mediaItems.slice(0, 10); // Mostrar apenas as primeiras 10
+        const mediaItems = batchData.mediaItems.slice(0, 10);
         const hasMore = batchData.mediaItems.length > 10;
 
         return `
-            <div class="existing-media-info">
-                <p><strong>Mídias existentes no lote:</strong> ${batchData.mediaItems.length} arquivo(s)</p>
-                <small>Novos arquivos serão adicionados aos existentes</small>
-                
-                <div class="existing-media-preview">
-                    <h4>Prévia das Mídias:</h4>
-                    <div class="media-preview-grid">
-                        ${mediaItems.map((media, index) => this.renderMediaPreview(media, index)).join('')}
-                        ${hasMore ? `<div class="media-more">+${batchData.mediaItems.length - 10} mais...</div>` : ''}
-                    </div>
+        <div class="existing-media-info">
+            <p><strong>Mídias existentes no lote:</strong> ${batchData.mediaItems.length} arquivo(s)</p>
+            <small>Novos arquivos serão adicionados aos existentes. Clique no ❌ para remover mídias.</small>
+            
+            <div class="existing-media-preview">
+                <h4>Prévia das Mídias:</h4>
+                <div class="media-preview-grid">
+                    ${mediaItems.map((media, index) => this.renderRemovableMediaPreview(media, index)).join('')}
+                    ${hasMore ? `<div class="media-more">+${batchData.mediaItems.length - 10} mais...</div>` : ''}
                 </div>
             </div>
+        </div>
+    `;
+    }
+
+    // ✅ NOVO MÉTODO: Renderizar mídias com opção de remoção
+    renderRemovableMediaPreview(media, index) {
+        const fileType = media.fileType || media.mimeType || 'unknown';
+        const fileName = media.originalName || media.fileName || `Mídia ${index + 1}`;
+        const fileSize = media.fileSize ? this.formatFileSize(media.fileSize) : 'Tamanho desconhecido';
+
+        let previewContent = '';
+        let mediaClass = 'media-preview-item removable-media';
+
+        if (fileType.startsWith('image/')) {
+            mediaClass += ' media-type-image';
+            const imageUrl = `/api/media/public-media/${this.getUserIdFromMedia(media)}/${this.getFilenameFromMedia(media)}`;
+
+            previewContent = `
+            <img src="${imageUrl}" alt="${fileName}" 
+                 onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                 loading="lazy" />
+            <div class="media-fallback" style="display: none;">
+                <i class="fas fa-file-image"></i>
+                <span>Erro ao carregar</span>
+            </div>
         `;
+        } else {
+            // ... resto do código igual ao renderMediaPreview original
+            mediaClass += ` media-type-${fileType.split('/')[0]}`;
+            let iconClass = 'fas fa-file';
+
+            if (fileType.startsWith('image/')) iconClass = 'fas fa-file-image';
+            else if (fileType.startsWith('video/')) iconClass = 'fas fa-file-video';
+            else if (fileType.startsWith('audio/')) iconClass = 'fas fa-file-audio';
+            else if (fileType === 'application/pdf') iconClass = 'fas fa-file-pdf';
+
+            previewContent = `
+            <div class="media-fallback">
+                <i class="${iconClass}"></i>
+                <span>${fileType.split('/')[0]}</span>
+            </div>
+        `;
+        }
+
+        return `
+    <div class="${mediaClass}" data-media-index="${index}" data-media-id="${media._id || index}">
+        <button type="button" class="remove-existing-media" onclick="app.mediaBatchesManager.removeExistingMedia(${index})" title="Remover mídia">
+            <i class="fas fa-times"></i>
+        </button>
+        <div class="media-preview-content">
+            ${previewContent}
+        </div>
+        <div class="media-preview-info">
+            <div class="media-name">${this.truncateFileName(fileName)}</div>
+            <div class="media-size">${fileSize}</div>
+        </div>
+    </div>
+    `;
+    }
+
+    // ✅ NOVO MÉTODO: Remover mídia existente
+    removeExistingMedia(index) {
+        if (!this.preservedBatchData || !this.preservedBatchData.mediaItems) {
+            console.error('❌ Nenhum batch data preservado encontrado');
+            return;
+        }
+
+        if (confirm('Tem certeza que deseja remover esta mídia do lote?')) {
+            // Remover do array preservado
+            this.preservedBatchData.mediaItems.splice(index, 1);
+
+            // Recriar a seção de mídias existentes
+            const existingMediaContainer = document.querySelector('.existing-media-info');
+            if (existingMediaContainer) {
+                existingMediaContainer.outerHTML = this.renderExistingMediaInfo(this.preservedBatchData);
+            }
+
+            this.safeShowNotification('✅ Mídia removida do lote', 'success');
+        }
     }
 
 
@@ -1228,8 +1376,7 @@ class MediaBatchesManager {
     }
 
     calculateProgress(batch) {
-        // Usar progress.progress se existir, caso contrário calcular
-        if (batch.progress && typeof batch.progress.progress === 'number') {
+        if (batch.progress?.progress != null) {
             return Math.round(batch.progress.progress);
         }
 
@@ -1237,7 +1384,7 @@ class MediaBatchesManager {
         const sent = batch.sent || 0;
 
         if (total === 0) return 0;
-        return Math.round((sent / total) * 100);
+        return Math.min(Math.round((sent / total) * 100), 100);
     }
 
     async cancelBatch(batchId) {
@@ -1262,17 +1409,21 @@ class MediaBatchesManager {
         try {
             if (!confirm('Tem certeza que deseja excluir este lote? Esta ação não pode ser desfeita.')) return;
 
+            this.safeShowLoading(true);
             const response = await this.safeApiRequest('DELETE', `/api/media/batches/${batchId}`);
 
             if (response.success) {
                 this.safeShowNotification('✅ Lote excluído com sucesso', 'success');
+                // ✅ CORREÇÃO: Recarregar a lista atual
                 this.loadMediaBatches(this.currentPage);
             } else {
-                throw new Error(response.error);
+                throw new Error(response.error || 'Erro desconhecido ao excluir lote');
             }
         } catch (error) {
             console.error('Erro ao excluir lote:', error);
             this.safeShowNotification(`❌ Erro: ${error.message}`, 'error');
+        } finally {
+            this.safeShowLoading(false);
         }
     }
 
@@ -1341,69 +1492,75 @@ class MediaBatchesManager {
     }
 
     showBatchDetailsModal(batch) {
+        // ✅ CORREÇÃO: Usar dados corretos do batch
+        const mediaCount = batch.mediaItems ? batch.mediaItems.length : 0;
+        const groupCount = batch.contactGroups ? batch.contactGroups.length : 0;
+        const sentCount = batch.sent || 0;
+        const totalSends = batch.totalSends || 0;
+        const progress = this.calculateProgress(batch);
+
         const modalHTML = `
-            <div id="batchDetailsModal" class="modal" style="display: block;">
-                <div class="modal-content" style="max-width: 900px;">
-                    <span class="close" id="closeBatchDetailsModal">&times;</span>
-                    <h3>Detalhes do Lote: ${batch.name}</h3>
-                    <div class="batch-details">
-                        <div class="detail-section">
-                            <h4>Informações Gerais</h4>
-                            <div class="detail-grid">
-                                <div class="detail-item">
-                                    <strong>Status:</strong>
-                                    <span class="status ${batch.status}">${this.getStatusText(batch.status)}</span>
-                                </div>
-                                <div class="detail-item">
-                                    <strong>Progresso:</strong>
-                                    <span>${batch.sent || 0} / ${batch.totalSends || 0}</span>
-                                </div>
-                                <div class="detail-item">
-                                    <strong>Mídias:</strong>
-                                    <span>${batch.mediaCount || 0} arquivo(s)</span>
-                                </div>
-                                <div class="detail-item">
-                                    <strong>Grupos:</strong>
-                                    <span>${batch.contactGroups ? batch.contactGroups.length : 0} grupo(s)</span>
-                                </div>
-                                <div class="detail-item">
-                                    <strong>mensagem:</strong>
-                                    <span>${batch.options.caption || ''}</span>
-                                </div>
-                                <div class="detail-item">
-                                    <strong>Criado em:</strong>
-                                    <span>${new Date(batch.createdAt).toLocaleString()}</span>
-                                </div>
-                                
+        <div id="batchDetailsModal" class="modal" style="display: block;">
+            <div class="modal-content" style="max-width: 900px;">
+                <span class="close" id="closeBatchDetailsModal">&times;</span>
+                <h3>Detalhes do Lote: ${batch.name}</h3>
+                <div class="batch-details">
+                    <div class="detail-section">
+                        <h4>Informações Gerais</h4>
+                        <div class="detail-grid">
+                            <div class="detail-item">
+                                <strong>Status:</strong>
+                                <span class="status ${batch.status}">${this.getStatusText(batch.status)}</span>
+                            </div>
+                            <div class="detail-item">
+                                <strong>Progresso:</strong>
+                                <span>${sentCount} / ${totalSends} (${progress}%)</span>
+                            </div>
+                            <div class="detail-item">
+                                <strong>Mídias:</strong>
+                                <span>${mediaCount} arquivo(s)</span>
+                            </div>
+                            <div class="detail-item">
+                                <strong>Grupos:</strong>
+                                <span>${groupCount} grupo(s)</span>
+                            </div>
+                            <div class="detail-item">
+                                <strong>Legenda:</strong>
+                                <span>${batch.caption || 'Nenhuma'}</span>
+                            </div>
+                            <div class="detail-item">
+                                <strong>Criado em:</strong>
+                                <span>${new Date(batch.createdAt).toLocaleString()}</span>
                             </div>
                         </div>
-                        
-                        ${batch.caption ? `
-                        <div class="detail-section">
-                            <h4>Legenda</h4>
-                            <div class="caption-display">${batch.caption}</div>
+                    </div>
+                    
+                    ${batch.caption ? `
+                    <div class="detail-section">
+                        <h4>Legenda Completa</h4>
+                        <div class="caption-display">${batch.caption}</div>
+                    </div>
+                    ` : ''}
+                    
+                    ${batch.mediaItems && batch.mediaItems.length > 0 ? `
+                    <div class="detail-section">
+                        <h4>Mídias (${batch.mediaItems.length})</h4>
+                        <div class="media-preview-grid large">
+                            ${batch.mediaItems.map((media, index) => this.renderMediaPreview(media, index)).join('')}
                         </div>
-                        ` : ''}
-                        
-                        ${batch.mediaItems && batch.mediaItems.length > 0 ? `
-                        <div class="detail-section">
-                            <h4>Mídias (${batch.mediaItems.length})</h4>
-                            <div class="media-preview-grid large">
-                                ${batch.mediaItems.map((media, index) => this.renderMediaPreview(media, index)).join('')}
-                            </div>
-                        </div>
-                        ` : ''}
-                        
-                        <div class="detail-section">
-                            <h4>Resultados</h4>
-                            <div class="results-list">
-                                ${this.renderResults(batch.results || [])}
-                            </div>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="detail-section">
+                        <h4>Resultados</h4>
+                        <div class="results-list">
+                            ${this.renderResults(batch.results || [])}
                         </div>
                     </div>
                 </div>
             </div>
-        `;
+        </div>
+    `;
 
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 

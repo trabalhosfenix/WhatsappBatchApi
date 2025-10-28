@@ -12,6 +12,7 @@ const ContactGroup = require('../models/ContactGroup');
 const qrcode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
+const { handleMessage } = require("../controllers/messageController.js")
 
 // Logger silencioso como no bot que funciona
 const baileysLogger = {
@@ -24,6 +25,10 @@ const baileysLogger = {
     fatal: () => { },
     child: () => baileysLogger
 };
+
+
+const messageCache = new Set()
+
 
 class WhatsAppService {
     constructor() {
@@ -191,6 +196,32 @@ class WhatsAppService {
             this.authStates.set(sessionName, { state, saveCreds });
             this.reconnectionAttempts.set(sessionName, 0);
             this.connectionStates.set(sessionName, 'connected');
+
+
+            socket.ev.on("messages.upsert", async ({ messages, type }) => {
+                const msg = messages[0]
+                if (!msg.message || !msg.key.id) return
+
+                const uniqueId = `${msg.key.remoteJid}_${msg.key.id}_${type}`
+
+                // if (messageCache.has(uniqueId)) {
+                //     console.log(`⏩ Ignorando duplicata: ${msg.key.id}`)
+                //     return
+                // }
+
+                messageCache.add(uniqueId)
+
+                // Limpa após 30 segundos (opcional)
+                // setTimeout(() => messageCache.delete(uniqueId), 30000)
+
+                try {
+                    //    console.log("📩 Mensagem recebida:", msg.message)
+                    await handleMessage(socket, msg)
+                } catch (error) {
+                    console.error('❌ Erro:', error)
+                }
+            })
+
 
             return socket;
 
@@ -384,6 +415,8 @@ class WhatsAppService {
         }
     }
 
+    // 📁 services/whatsappService.js - ATUALIZAR O MÉTODO loadGroupsFromWhatsApp
+
     async loadGroupsFromWhatsApp(sessionName, userId) {
         try {
             const socket = this.sockets.get(sessionName);
@@ -391,79 +424,90 @@ class WhatsAppService {
                 throw new Error('Instância não encontrada ou não conectada');
             }
 
-            console.log(`📞 [${sessionName}] Buscando grupos...`);
+            console.log(`📞 [${sessionName}] Buscando grupos para usuário: ${userId}`);
 
             const groups = await socket.groupFetchAllParticipating();
-
-            let groupCount = 0;
             const instanceId = await this.getInstanceIdBySessionName(sessionName);
 
-            console.log(`📊 [${sessionName}] Encontrados ${Object.keys(groups).length} grupos no WhatsApp`);
+            if (!instanceId) {
+                throw new Error('ID da instância não encontrado');
+            }
 
-
-
+            let groupCount = 0;
+            const results = [];
 
             for (const [jid, group] of Object.entries(groups)) {
                 try {
                     const groupName = group.subject || 'Sem nome';
-                    const groupDescription = group.desc || '';
                     const participants = group.participants || [];
-                    const participantCount = participants.length;
 
-                    console.log(`💾 [${sessionName}] Salvando grupo: ${groupName} (${participantCount} participantes)`);
-
-                    // Extrair contatos dos participantes
+                    // Extrair contatos
                     const contacts = this.extractParticipantsAsContacts(participants);
 
-                    console.log(`👥 [${sessionName}] Extraídos ${contacts.length} contatos do grupo ${groupName}`);
-
-                    // Preparar dados do grupo
+                    // Dados do grupo com instância
                     const groupData = {
+                        userId: userId, // ✅ GARANTIR que o userId está incluído
                         name: groupName,
-                        description: groupDescription,
+                        description: group.desc || '',
                         contacts: contacts,
                         contactCount: contacts.length,
-                        participantCount: participantCount,
+                        participantCount: participants.length,
                         jid: jid,
                         source: 'whatsapp',
-                        whatsappInstanceId: instanceId
+                        whatsappInstanceId: instanceId, // ✅ REFERÊNCIA À INSTÂNCIA
+                        groupType: this.determineGroupType(group),
+                        syncStatus: 'synced',
+                        lastSync: new Date()
                     };
 
-                    await ContactGroup.findOneAndUpdate(
+                    // Upsert garantindo usuário e instância
+                    const savedGroup = await ContactGroup.findOneAndUpdate(
                         {
                             userId: userId,
                             jid: jid,
-                            source: 'whatsapp'
+                            whatsappInstanceId: instanceId // ✅ FILTRAR POR INSTÂNCIA TAMBÉM
                         },
                         groupData,
                         {
                             upsert: true,
                             new: true,
-                            runValidators: false // Desativar temporariamente para debug
+                            runValidators: true
                         }
                     );
 
                     groupCount++;
-                    console.log(`✅ [${sessionName}] Grupo salvo: ${groupName} com ${contacts.length} contatos`);
+                    results.push({
+                        jid: jid,
+                        name: groupName,
+                        participants: participants.length,
+                        contacts: contacts.length,
+                        groupId: savedGroup._id
+                    });
+
+                    console.log(`✅ [${sessionName}] Grupo salvo: ${groupName}`);
 
                 } catch (groupError) {
-                    console.error(`❌ [${sessionName}] Erro ao salvar grupo:`, groupError.message);
-                    // Log mais detalhado
-                    console.log('🔍 Dados do grupo que causaram erro:', {
-                        name: group.subject,
-                        participantCount: group.participants?.length,
-                        jid: jid
-                    });
+                    console.error(`❌ [${sessionName}] Erro no grupo ${jid}:`, groupError.message);
                 }
             }
 
-            console.log(`✅ [${sessionName}] ${groupCount} grupos carregados com sucesso`);
-            return groupCount;
+            console.log(`🎉 [${sessionName}] ${groupCount} grupos processados para usuário ${userId}`);
+            return {
+                total: groupCount,
+                results: results
+            };
 
         } catch (error) {
             console.error(`❌ [${sessionName}] Erro ao carregar grupos:`, error);
             throw error;
         }
+    }
+
+    // ✅ MÉTODO AUXILIAR PARA DETERMINAR TIPO DO GRUPO
+    determineGroupType(group) {
+        if (group.isCommunity) return 'community';
+        if (group.subject && group.subject.includes('Broadcast')) return 'broadcast';
+        return 'personal';
     }
 
     async recreateInstance(sessionName, userId) {
@@ -1250,6 +1294,7 @@ class WhatsAppService {
             throw error;
         }
     }
+
 }
 // Exportar singleton
 module.exports = new WhatsAppService();

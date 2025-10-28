@@ -97,7 +97,7 @@ const contactGroupSchema = new mongoose.Schema({
   },
   description: {
     type: String,
-    maxlength: 500
+    maxlength: 5000
   },
   
   // ✅ CORREÇÃO CRÍTICA: ADICIONAR CAMPO jid QUE ESTÁ FALTANDO

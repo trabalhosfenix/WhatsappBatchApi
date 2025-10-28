@@ -14,7 +14,22 @@ class AgendaManager {
                 sort: 'name',
                 hasProfilePicture: false,
                 isBusiness: false,
-                verified: false
+                verified: false,
+                platform: '' // 'whatsapp', 'manual', ou '' para todos
+            },
+            cache: {
+                contacts: null,
+                groups: null,
+                instances: null,
+                lastUpdated: null
+            },
+
+            // ✅ NOVOS FILTROS PARA GRUPOS
+            groupFilters: {
+                search: '',
+                platform: '',
+                instance: '',
+                sort: 'name'
             },
             cache: {
                 contacts: null,
@@ -186,6 +201,14 @@ class AgendaManager {
             });
         }
 
+        const filterPlatform = document.getElementById('filterPlatform');
+        if (filterPlatform) {
+            filterPlatform.addEventListener('change', (e) => {
+                this.state.filters.platform = e.target.value;
+                this.filterContacts();
+            });
+        }
+
         const filterBusiness = document.getElementById('filterBusiness');
         if (filterBusiness) {
             filterBusiness.addEventListener('change', (e) => {
@@ -199,6 +222,39 @@ class AgendaManager {
             filterVerified.addEventListener('change', (e) => {
                 this.state.filters.verified = e.target.checked;
                 this.filterContacts();
+            });
+        }
+
+        // ✅ NOVOS FILTROS PARA GRUPOS
+        const searchGroups = document.getElementById('searchGroups');
+        if (searchGroups) {
+            searchGroups.addEventListener('input', (e) => {
+                this.state.groupFilters.search = e.target.value;
+                this.filterGroups();
+            });
+        }
+
+        const filterGroupPlatform = document.getElementById('filterGroupPlatform');
+        if (filterGroupPlatform) {
+            filterGroupPlatform.addEventListener('change', (e) => {
+                this.state.groupFilters.platform = e.target.value;
+                this.filterGroups();
+            });
+        }
+
+        const filterGroupInstance = document.getElementById('filterGroupInstance');
+        if (filterGroupInstance) {
+            filterGroupInstance.addEventListener('change', (e) => {
+                this.state.groupFilters.instance = e.target.value;
+                this.filterGroups();
+            });
+        }
+
+        const sortGroups = document.getElementById('sortGroups');
+        if (sortGroups) {
+            sortGroups.addEventListener('change', (e) => {
+                this.state.groupFilters.sort = e.target.value;
+                this.filterGroups();
             });
         }
 
@@ -244,19 +300,29 @@ class AgendaManager {
         }
     }
 
+    // NOVO MÉTODO SIMPLIFICADO - substituir o setupModalEvents existente
     setupModalEvents() {
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('close') ||
-                e.target.classList.contains('modal-cancel') ||
-                (e.target.classList.contains('modal') && !e.target.closest('.modal-content'))) {
-                this.closeModals();
-            }
+        // ✅ FECHAMENTO SIMPLES - sem setTimeout complexo
+        const closeModal = () => {
+            const modal = document.getElementById('mediaBatchModal');
+            if (modal) modal.remove();
+            this.currentModal = null;
+        };
+
+        // Botão X
+        document.getElementById('closeMediaBatchModal')?.addEventListener('click', closeModal);
+
+        // Botão Cancelar
+        document.getElementById('cancelMediaBatchBtn')?.addEventListener('click', closeModal);
+
+        // Clicar fora
+        document.getElementById('mediaBatchModal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'mediaBatchModal') closeModal();
         });
 
+        // Tecla ESC
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeModals();
-            }
+            if (e.key === 'Escape' && this.currentModal === 'mediaBatchModal') closeModal();
         });
     }
 
@@ -268,6 +334,9 @@ class AgendaManager {
                 this.loadWhatsAppInstances()
             ]);
             this.updateStats();
+            // ✅ RENDERIZAR FILTROS DE INSTÂNCIAS
+            this.renderInstanceFilters();
+
         } catch (error) {
             console.error('Erro ao carregar dados iniciais:', error);
         }
@@ -502,6 +571,13 @@ class AgendaManager {
                         ${contact.lastSeen ? `<span class="last-seen">Visto: ${this.formatRelativeTime(contact.lastSeen)}</span>` : ''}
                     </div>
                 </div>
+                <div class="contact-platform">
+                <span class="platform-badge ${contact.platform}">
+                    ${contact.platform === 'whatsapp' ?
+                '<i class="fab fa-whatsapp"></i> WhatsApp' :
+                '<i class="fas fa-user"></i> Manual'}
+    </span>
+</div>
             </div>
             
             ${contact.groups && contact.groups.length > 0 ? `
@@ -529,45 +605,97 @@ class AgendaManager {
     `).join('');
     }
 
-    renderGroups() {
+    renderGroups(groupsToRender = null) {
         const groupsList = document.getElementById('groupsList');
         if (!groupsList) {
             console.warn('❌ Elemento groupsList não encontrado');
             return;
         }
 
-        if (this.groups.length === 0) {
-            groupsList.innerHTML = `
-            <div class="empty-state">
-                <i class="fas fa-layer-group"></i>
-                <h3>Nenhum grupo encontrado</h3>
-                <p>Crie seu primeiro grupo para organizar os contatos</p>
-            </div>
-        `;
+        const groups = groupsToRender || this.groups;
+
+        // Atualizar contador de resultados
+        this.updateGroupsResultsCount(groups);
+
+        if (groups.length === 0) {
+            const hasFilters = Object.values(this.state.groupFilters).some(value =>
+                value && value !== '' && value !== 'name'
+            );
+
+            if (hasFilters) {
+                groupsList.innerHTML = `
+                <div class="groups-empty">
+                    <i class="fas fa-filter"></i>
+                    <h3>Nenhum grupo encontrado</h3>
+                    <p>Tente ajustar os filtros ou <a href="javascript:void(0)" onclick="agendaManager.clearGroupFilters()">limpar todos os filtros</a></p>
+                    <button class="btn btn-secondary" onclick="agendaManager.clearGroupFilters()">
+                        <i class="fas fa-times"></i>
+                        Limpar Filtros
+                    </button>
+                </div>
+            `;
+            } else {
+                groupsList.innerHTML = `
+                <div class="groups-empty">
+                    <i class="fas fa-layer-group"></i>
+                    <h3>Nenhum grupo encontrado</h3>
+                    <p>Crie seu primeiro grupo para organizar os contatos</p>
+                    <button class="btn btn-primary" onclick="agendaManager.showCreateGroupModal()">
+                        <i class="fas fa-plus"></i>
+                        Criar Primeiro Grupo
+                    </button>
+                </div>
+            `;
+            }
             return;
         }
 
-        groupsList.innerHTML = this.groups.map((group, index) => `
-        <div class="group-card">
+        groupsList.innerHTML = this.groups.map((group, index) => {
+            const platform = group.source === 'whatsapp' ? 'whatsapp' : 'manual';
+            const hasDescription = group.description && group.description.trim() !== '';
+
+            return `
+        <div class="group-card" data-platform="${platform}">
             <div class="group-header">
-                <div>
+                <div class="group-header-content">
                     <h3>${this.escapeHtml(group.name)}</h3>
-                    ${group.description ? `
-                        <button class="accordion-btn" onclick="toggleAccordion(${index})">
-                            <i class="fas fa-chevron-down"></i> Descrição
-                        </button>
-                        <div id="accordion-${index}" class="accordion-content">
-                            <p>${this.escapeHtml(group.description)}</p>
-                        </div>
-                    ` : ''}
+                    <div class="group-origin">
+                        <i class="${platform === 'whatsapp' ? 'fab fa-whatsapp' : 'fas fa-user-edit'}"></i>
+                        ${platform === 'whatsapp' ? 'WhatsApp' : 'Manual'}
+                    </div>
                 </div>
-                <span class="group-count">${group.contactCount || 0} contatos</span>
+                <span class="group-count">${group.contactCount || 0}</span>
             </div>
             
+            ${hasDescription ? `
+            <div class="group-accordion">
+                <button class="accordion-btn" onclick="agendaManager.toggleAccordion(${index})">
+                    <i class="fas fa-chevron-down"></i>
+                    Descrição
+                </button>
+                <div class="accordion-content" id="accordion-${index}">
+                    <div class="group-description">
+                        ${this.escapeHtml(group.description)}
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+            
             <div class="group-stats">
-                <small>Criado em ${this.formatDate(group.createdAt)}</small>
-                <small>Fonte: ${group.source === 'whatsapp' ? 'WhatsApp' : 'Manual'}</small>
-                ${group.whatsappInstanceId ? `<small>Instância: ${this.getWhatsAppInstanceName(group.whatsappInstanceId)}</small>` : ''}
+                <div class="group-stat-item">
+                    <span class="group-stat-label">Criado em:</span>
+                    <span class="group-stat-value">${this.formatDate(group.createdAt)}</span>
+                </div>
+                ${group.whatsappInstanceId ? `
+                <div class="group-stat-item">
+                    <span class="group-stat-label">Instância:</span>
+                    <span class="group-stat-value">${this.getWhatsAppInstanceName(group.whatsappInstanceId)}</span>
+                </div>
+                ` : ''}
+                <div class="group-stat-item">
+                    <span class="group-stat-label">Contatos:</span>
+                    <span class="group-stat-value">${group.contactCount || 0}</span>
+                </div>
             </div>
             
             <div class="group-actions">
@@ -575,23 +703,175 @@ class AgendaManager {
                     <i class="fas fa-eye"></i>
                     Ver Contatos
                 </button>
+                <button class="btn btn-primary" onclick="agendaManager.editGroup('${group._id}')">
+                    <i class="fas fa-edit"></i>
+                    Editar
+                </button>
             </div>
         </div>
-    `).join('');
-
-        // Adiciona a função global para controle do acordeon
-        window.toggleAccordion = (index) => {
-            const content = document.getElementById(`accordion-${index}`);
-            const btn = content.previousElementSibling;
-            if (content.classList.contains('open')) {
-                content.classList.remove('open');
-                btn.innerHTML = '<i class="fas fa-chevron-down"></i> Descrição';
-            } else {
-                content.classList.add('open');
-                btn.innerHTML = '<i class="fas fa-chevron-up"></i> Ocultar';
-            }
-        };
+        `;
+        }).join('');
     }
+
+    // Método para controlar o acordeon - CORRIGIDO
+    toggleAccordion(index) {
+        const content = document.getElementById(`accordion-${index}`);
+        const btn = content.previousElementSibling;
+
+        if (content.classList.contains('open')) {
+            // Fechar acordeon
+            content.classList.remove('open');
+            btn.classList.remove('active');
+            btn.innerHTML = '<i class="fas fa-chevron-down"></i> Descrição';
+
+            // Aguardar a transição antes de esconder completamente
+            setTimeout(() => {
+                if (!content.classList.contains('open')) {
+                    content.style.display = 'none';
+                }
+            }, 300);
+        } else {
+            // Abrir acordeon
+            content.style.display = 'block';
+
+            // Pequeno delay para garantir que o display block foi aplicado
+            setTimeout(() => {
+                content.classList.add('open');
+                btn.classList.add('active');
+                btn.innerHTML = '<i class="fas fa-chevron-up"></i> Ocultar';
+            }, 10);
+        }
+    }
+
+    // Método alternativo mais simples (se preferir)
+    toggleGroupDescription(index) {
+        const content = document.getElementById(`accordion-${index}`);
+        const btn = content.previousElementSibling;
+
+        content.classList.toggle('open');
+        btn.classList.toggle('active');
+
+        if (content.classList.contains('open')) {
+            btn.innerHTML = '<i class="fas fa-chevron-up"></i> Ocultar';
+        } else {
+            btn.innerHTML = '<i class="fas fa-chevron-down"></i> Descrição';
+        }
+    }
+
+    // ✅ NOVO: Filtrar grupos
+    filterGroups() {
+        let filteredGroups = this.groups;
+
+        // Filtro por busca
+        if (this.state.groupFilters.search) {
+            const searchTerm = this.state.groupFilters.search.toLowerCase();
+            filteredGroups = filteredGroups.filter(group =>
+                group.name.toLowerCase().includes(searchTerm) ||
+                (group.description && group.description.toLowerCase().includes(searchTerm))
+            );
+        }
+
+        // Filtro por plataforma
+        if (this.state.groupFilters.platform) {
+            filteredGroups = filteredGroups.filter(group =>
+                group.source === this.state.groupFilters.platform
+            );
+        }
+
+        // Filtro por instância
+        if (this.state.groupFilters.instance) {
+            filteredGroups = filteredGroups.filter(group =>
+                group.whatsappInstanceId === this.state.groupFilters.instance
+            );
+        }
+
+        this.sortGroups(filteredGroups);
+        this.updateGroupsResultsCount(filteredGroups);
+    }
+
+    // ✅ NOVO: Ordenar grupos
+    sortGroups(groupsToSort = null) {
+        const groups = groupsToSort || this.groups;
+        const sortedGroups = [...groups];
+
+        switch (this.state.groupFilters.sort) {
+            case 'name':
+                sortedGroups.sort((a, b) => a.name.localeCompare(b.name));
+                break;
+            case 'recent':
+                sortedGroups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                break;
+            case 'contacts':
+                sortedGroups.sort((a, b) => (b.contactCount || 0) - (a.contactCount || 0));
+                break;
+        }
+
+        this.renderGroups(sortedGroups);
+    }
+
+    // ✅ NOVO: Atualizar contador de resultados
+    updateGroupsResultsCount(filteredGroups) {
+        const resultsCount = document.getElementById('groupsResultsCount');
+        if (resultsCount) {
+            const total = this.groups.length;
+            const filtered = filteredGroups.length;
+
+            if (filtered === total) {
+                resultsCount.innerHTML = `<strong>${total}</strong> grupos encontrados`;
+            } else {
+                resultsCount.innerHTML = `<strong>${filtered}</strong> de <strong>${total}</strong> grupos`;
+            }
+        }
+    }
+
+    // ✅ NOVO: Renderizar opções de instâncias no filtro
+    renderInstanceFilters() {
+        const filterGroupInstance = document.getElementById('filterGroupInstance');
+        if (!filterGroupInstance) return;
+
+        // Agrupar instâncias por status
+        const connectedInstances = this.whatsappInstances.filter(inst => inst.status === 'connected');
+        const otherInstances = this.whatsappInstances.filter(inst => inst.status !== 'connected');
+
+        let options = '<option value="">Todas as Instâncias</option>';
+
+        if (connectedInstances.length > 0) {
+            options += '<optgroup label="Conectadas">';
+            options += connectedInstances.map(instance =>
+                `<option value="${instance._id}">${this.escapeHtml(instance.sessionName)} (${instance.phoneNumber || 'N/A'})</option>`
+            ).join('');
+            options += '</optgroup>';
+        }
+
+        if (otherInstances.length > 0) {
+            options += '<optgroup label="Outras">';
+            options += otherInstances.map(instance =>
+                `<option value="${instance._id}">${this.escapeHtml(instance.sessionName)} - ${instance.status}</option>`
+            ).join('');
+            options += '</optgroup>';
+        }
+
+        filterGroupInstance.innerHTML = options;
+    }
+
+    // ✅ NOVO: Limpar filtros de grupos
+    clearGroupFilters() {
+        this.state.groupFilters = {
+            search: '',
+            platform: '',
+            instance: '',
+            sort: 'name'
+        };
+
+        // Resetar inputs
+        document.getElementById('searchGroups').value = '';
+        document.getElementById('filterGroupPlatform').value = '';
+        document.getElementById('filterGroupInstance').value = '';
+        document.getElementById('sortGroups').value = 'name';
+
+        this.filterGroups();
+    }
+
 
 
     renderGroupFilters() {
@@ -611,24 +891,51 @@ class AgendaManager {
         if (!advancedFilters) return;
 
         advancedFilters.innerHTML = `
-            <div class="filter-group">
-                <label>
-                    <input type="checkbox" id="filterProfilePicture"> 
-                    Com foto de perfil
-                </label>
-                <label>
-                    <input type="checkbox" id="filterBusiness">
-                    Contas Business
-                </label>
-                <label>
-                    <input type="checkbox" id="filterVerified">
-                    Verificados
-                </label>
-            </div>
-        `;
+        <div class="filter-group">
+            <label>
+                <input type="checkbox" id="filterProfilePicture"> 
+                <i class="fas fa-camera"></i> Com foto de perfil
+            </label>
+            <label>
+                <input type="checkbox" id="filterBusiness">
+                <i class="fas fa-briefcase"></i> Contas Business
+            </label>
+            <label>
+                <input type="checkbox" id="filterVerified">
+                <i class="fas fa-check-circle"></i> Verificados
+            </label>
+        </div>
+    `;
 
         // Reconfigurar event listeners
-        this.setupEventListeners();
+        this.setupAdvancedFilterListeners();
+    }
+
+    // Novo método para organizar melhor os listeners
+    setupAdvancedFilterListeners() {
+        const filterProfilePicture = document.getElementById('filterProfilePicture');
+        if (filterProfilePicture) {
+            filterProfilePicture.addEventListener('change', (e) => {
+                this.state.filters.hasProfilePicture = e.target.checked;
+                this.filterContacts();
+            });
+        }
+
+        const filterBusiness = document.getElementById('filterBusiness');
+        if (filterBusiness) {
+            filterBusiness.addEventListener('change', (e) => {
+                this.state.filters.isBusiness = e.target.checked;
+                this.filterContacts();
+            });
+        }
+
+        const filterVerified = document.getElementById('filterVerified');
+        if (filterVerified) {
+            filterVerified.addEventListener('change', (e) => {
+                this.state.filters.verified = e.target.checked;
+                this.filterContacts();
+            });
+        }
     }
 
     viewContact(contactId) {
@@ -969,7 +1276,10 @@ class AgendaManager {
     // FILTROS ATUALIZADOS
     filterContacts() {
         let filteredContacts = this.contacts;
+        console.log(`🔍 Aplicando filtros aos contatos... ${JSON.stringify(this.state.filters)}`);
+        console.log('Contatos antes do filtro:', filteredContacts);
 
+        // Filtro de busca
         if (this.state.filters.search) {
             const searchTerm = this.state.filters.search.toLowerCase();
             filteredContacts = filteredContacts.filter(contact =>
@@ -980,13 +1290,21 @@ class AgendaManager {
             );
         }
 
+        // ✅ NOVO FILTRO: Plataforma (WhatsApp/Manual)
+        if (this.state.filters.platform) {
+            filteredContacts = filteredContacts.filter(contact =>
+                contact.platform === this.state.filters.platform
+            );
+        }
+
+        // Filtro por grupo
         if (this.state.filters.group) {
             filteredContacts = filteredContacts.filter(contact =>
                 contact.groupIds && contact.groupIds.includes(this.state.filters.group)
             );
         }
 
-        // ✅ NOVOS FILTROS
+        // Filtros avançados
         if (this.state.filters.hasProfilePicture) {
             filteredContacts = filteredContacts.filter(contact =>
                 contact.profilePicture || contact.photo
@@ -1035,6 +1353,16 @@ class AgendaManager {
                     if (!contactsMap.has(contactId)) {
                         const cleanedContact = this.cleanContactData(contact, group);
 
+                        // ✅ DETERMINAR A PLATAFORMA DO CONTATO
+                        let platform = 'manual'; // padrão
+                        if (group.source === 'whatsapp' || group.whatsappInstanceId) {
+                            platform = 'whatsapp';
+                        }
+                        // Também verificar se o contato tem dados do WhatsApp
+                        if (contact.whatsappId || contact.pushName || contact.isBusiness) {
+                            platform = 'whatsapp';
+                        }
+
                         contactsMap.set(contactId, {
                             _id: contactId,
                             name: cleanedContact.name,
@@ -1042,7 +1370,10 @@ class AgendaManager {
                             whatsappId: cleanedContact.whatsappId,
                             photo: cleanedContact.photo,
 
-                            // ✅ NOVOS CAMPOS
+                            // ✅ PLATAFORMA AGORA NO CONTATO
+                            platform: platform,
+
+                            // Outros campos
                             pushName: cleanedContact.pushName,
                             shortName: cleanedContact.shortName,
                             profilePicture: cleanedContact.profilePicture,
@@ -1052,11 +1383,14 @@ class AgendaManager {
                             businessName: cleanedContact.businessName,
                             businessCategory: cleanedContact.businessCategory,
                             verified: cleanedContact.verified,
-                            platform: cleanedContact.platform,
 
                             groups: [group.name],
                             groupIds: [group._id],
                             createdAt: contact.createdAt || group.createdAt,
+
+                            // ✅ INCLUIR INFORMAÇÕES DO GRUPO PARA DEBUG
+                            groupSource: group.source,
+                            groupInstanceId: group.whatsappInstanceId,
 
                             originalData: {
                                 name: contact.name,
@@ -1070,6 +1404,11 @@ class AgendaManager {
                         if (!existingContact.groups.includes(group.name)) {
                             existingContact.groups.push(group.name);
                             existingContact.groupIds.push(group._id);
+
+                            // ✅ ATUALIZAR PLATAFORMA SE O NOVO GRUPO FOR WHATSAPP
+                            if (group.source === 'whatsapp' || group.whatsappInstanceId) {
+                                existingContact.platform = 'whatsapp';
+                            }
                         }
                     }
                 });
@@ -1079,25 +1418,25 @@ class AgendaManager {
         return Array.from(contactsMap.values());
     }
 
-   cleanContactData(contact, group) {
-    let { name, phone, whatsappId } = contact;
-    
-    // PRIORIDADE para nomes reais do WhatsApp
-    if (this.isDefaultName(name) && contact.pushName) {
-        name = contact.pushName; // Usar pushName do WhatsApp
-    } 
-    else if (this.isDefaultName(name) && contact.shortName) {
-        name = contact.shortName; // Ou shortName
+    cleanContactData(contact, group) {
+        let { name, phone, whatsappId } = contact;
+
+        // PRIORIDADE para nomes reais do WhatsApp
+        if (this.isDefaultName(name) && contact.pushName) {
+            name = contact.pushName; // Usar pushName do WhatsApp
+        }
+        else if (this.isDefaultName(name) && contact.shortName) {
+            name = contact.shortName; // Ou shortName
+        }
+        else if (this.isDefaultName(name)) {
+            name = this.generateBetterName(phone, whatsappId, group.name);
+        }
+
+        // Correção de telefone para Brasil
+        phone = this.formatPhoneForBrazil(phone);
+
+        return { name, phone, whatsappId, /* outros campos */ };
     }
-    else if (this.isDefaultName(name)) {
-        name = this.generateBetterName(phone, whatsappId, group.name);
-    }
-    
-    // Correção de telefone para Brasil
-    phone = this.formatPhoneForBrazil(phone);
-    
-    return { name, phone, whatsappId, /* outros campos */ };
-}
 
 
     // NOVO: Corrigir WhatsApp ID
@@ -1158,28 +1497,28 @@ class AgendaManager {
         return defaultPatterns.some(pattern => pattern.test(name));
     }
 
-   
-formatPhoneForBrazil(phone) {
-    if (!phone) return 'N/A';
-    
-    let clean = phone.replace(/\D/g, '');
-    
-    // Padrão Brasil: +55 (11) 99999-9999
-    if (clean.startsWith('55')) {
-        clean = clean.slice(2); // Remove o 55
+
+    formatPhoneForBrazil(phone) {
+        if (!phone) return 'N/A';
+
+        let clean = phone.replace(/\D/g, '');
+
+        // Padrão Brasil: +55 (11) 99999-9999
+        if (clean.startsWith('55')) {
+            clean = clean.slice(2); // Remove o 55
+        }
+
+        // Se tem 11 dígitos (DDD + 9 dígitos)
+        if (clean.length === 11) {
+            return `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
+        }
+        // Se tem 10 dígitos (DDD + 8 dígitos)
+        else if (clean.length === 10) {
+            return `(${clean.slice(0, 2)}) ${clean.slice(2, 6)}-${clean.slice(6)}`;
+        }
+
+        return clean; // Retorna limpo se não conhece o formato
     }
-    
-    // Se tem 11 dígitos (DDD + 9 dígitos)
-    if (clean.length === 11) {
-        return `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
-    }
-    // Se tem 10 dígitos (DDD + 8 dígitos)
-    else if (clean.length === 10) {
-        return `(${clean.slice(0, 2)}) ${clean.slice(2, 6)}-${clean.slice(6)}`;
-    }
-    
-    return clean; // Retorna limpo se não conhece o formato
-}
 
 
     debugContactTransformation() {

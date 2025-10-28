@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="css/agenda.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
+
 <body>
     <!-- Header (integrado com seu sistema existente) -->
     <header class="header">
@@ -17,13 +19,13 @@
             </h1>
             <div class="user-menu">
                 <span id="userName">Usuário</span>
-                 <button id="voltarBtn" class="btn-voltar btn btn-secondary">
+                <button id="voltarBtn" class="btn-voltar btn btn-secondary">
                     <i class="fas fa-arrow-left"></i> Voltar
                 </button>
                 <button id="logoutBtn" class="btn-logout btn btn-secondary">
                     <i class="fas fa-sign-out-alt"></i> Sair
                 </button>
-               
+
 
             </div>
         </div>
@@ -64,20 +66,42 @@
             </div>
 
             <!-- Filtros e Busca -->
+            <!-- Filtros e Busca - VERSÃO ATUALIZADA -->
             <div class="filters-bar">
                 <div class="search-box">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="searchContacts" placeholder="Buscar contatos...">
+                    <input type="text" id="searchContacts" placeholder="Buscar por nome, telefone ou WhatsApp...">
                 </div>
+
                 <div class="filter-options">
-                    <select id="filterGroup">
-                        <option value="">Todos os Grupos</option>
-                    </select>
-                    <select id="sortContacts">
-                        <option value="name">Ordenar por Nome</option>
-                        <option value="recent">Mais Recentes</option>
-                    </select>
+                    <div class="filter-group">
+                        <label for="filterPlatform">Plataforma:</label>
+                        <select id="filterPlatform">
+                            <option value="">Todas as Plataformas</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="filterGroup">Grupo:</label>
+                        <select id="filterGroup">
+                            <option value="">Todos os Grupos</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="sortContacts">Ordenar por:</label>
+                        <select id="sortContacts">
+                            <option value="name">Nome A-Z</option>
+                            <option value="recent">Mais Recentes</option>
+                            <option value="business">Contas Business</option>
+                        </select>
+                    </div>
                 </div>
+
+                <!-- Filtros Avançados -->
+                <div id="advancedFilters" class="advanced-filters"></div>
             </div>
 
             <!-- Lista de Contatos -->
@@ -90,6 +114,7 @@
         </section>
 
         <!-- Seção Grupos -->
+        <!-- Seção Grupos - ATUALIZADA COM FILTROS -->
         <section id="groupsSection" class="content-section">
             <div class="section-header">
                 <h2>Grupos de Contatos</h2>
@@ -98,6 +123,42 @@
                     Novo Grupo
                 </button>
             </div>
+
+            <!-- NOVA BARRA DE FILTROS PARA GRUPOS -->
+            <div class="filters-bar">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchGroups" placeholder="Buscar grupos por nome...">
+                </div>
+
+                <div class="filter-options">
+                    <div class="filter-group">
+                        <label for="filterGroupPlatform">Plataforma:</label>
+                        <select id="filterGroupPlatform">
+                            <option value="">Todas as Plataformas</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="filterGroupInstance">Instância:</label>
+                        <select id="filterGroupInstance">
+                            <option value="">Todas as Instâncias</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="sortGroups">Ordenar por:</label>
+                        <select id="sortGroups">
+                            <option value="name">Nome A-Z</option>
+                            <option value="recent">Mais Recentes</option>
+                            <option value="contacts">Mais Contatos</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
             <div class="groups-grid" id="groupsList">
                 <!-- Grupos serão carregados aqui -->
             </div>
@@ -113,7 +174,7 @@
                     <h2 id="profileName">Nome do Usuário</h2>
                     <p id="profileEmail">email@exemplo.com</p>
                 </div>
-                
+
                 <div class="profile-stats">
                     <div class="stat-card">
                         <h3 id="totalContacts">0</h3>
@@ -160,34 +221,34 @@
             </div>
             <form id="contactForm" class="modal-form">
                 <input type="hidden" id="contactId">
-                
+
                 <div class="form-group">
                     <label for="contactName">Nome *</label>
                     <input type="text" id="contactName" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="contactPhone">Telefone *</label>
                     <input type="tel" id="contactPhone" required placeholder="(11) 99999-9999">
                 </div>
-                
+
                 <div class="form-group">
                     <label for="contactWhatsAppId">ID WhatsApp (opcional)</label>
                     <input type="text" id="contactWhatsAppId" placeholder="5511999999999@s.whatsapp.net">
                 </div>
-                
+
                 <div class="form-group">
                     <label for="contactGroups">Grupos</label>
                     <select id="contactGroups" multiple>
                         <!-- Grupos serão carregados aqui -->
                     </select>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="contactPhoto">Foto (URL)</label>
                     <input type="url" id="contactPhoto" placeholder="https://exemplo.com/foto.jpg">
                 </div>
-                
+
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary modal-cancel">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Salvar Contato</button>
@@ -204,24 +265,24 @@
             </div>
             <form id="groupForm" class="modal-form">
                 <input type="hidden" id="groupId">
-                
+
                 <div class="form-group">
                     <label for="groupName">Nome do Grupo *</label>
                     <input type="text" id="groupName" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="groupDescription">Descrição</label>
                     <textarea id="groupDescription" rows="3"></textarea>
                 </div>
-                
+
                 <div class="form-group">
                     <label>Selecionar Contatos</label>
                     <div class="contacts-selection" id="groupContactsSelection">
                         <!-- Lista de contatos para seleção -->
                     </div>
                 </div>
-                
+
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary modal-cancel">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Salvar Grupo</button>
@@ -239,59 +300,60 @@
     <div id="notification" class="notification" style="display: none;"></div>
 
     <!-- ORDEM CORRETA DE CARREGAMENTO -->
-<script src="js/security.js"></script>
-<script src="js/agenda.js"></script>
+    <script src="js/security.js"></script>
+    <script src="js/agenda.js"></script>
 
-<script>
-    // Inicialização independente da agenda
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('📍 Inicializando Agenda de forma independente...');
-        
-        // Criar auth mock compatível com localStorage
-        const authMock = {
-            getAuthHeaders: function() {
-                const token = localStorage.getItem('authToken');
-                return {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                };
-            },
-            showNotification: function(message, type) {
-                const notification = document.getElementById('notification');
-                if (notification) {
-                    notification.textContent = message;
-                    notification.className = `notification ${type}`;
-                    notification.style.display = 'block';
-                    setTimeout(() => {
-                        notification.style.display = 'none';
-                    }, 3000);
+    <script>
+        // Inicialização independente da agenda
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log('📍 Inicializando Agenda de forma independente...');
+
+            // Criar auth mock compatível com localStorage
+            const authMock = {
+                getAuthHeaders: function () {
+                    const token = localStorage.getItem('authToken');
+                    return {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    };
+                },
+                showNotification: function (message, type) {
+                    const notification = document.getElementById('notification');
+                    if (notification) {
+                        notification.textContent = message;
+                        notification.className = `notification ${type}`;
+                        notification.style.display = 'block';
+                        setTimeout(() => {
+                            notification.style.display = 'none';
+                        }, 3000);
+                    }
+                },
+                showLoading: function () {
+                    const loading = document.getElementById('loading');
+                    if (loading) loading.style.display = 'flex';
+                },
+                hideLoading: function () {
+                    const loading = document.getElementById('loading');
+                    if (loading) loading.style.display = 'none';
                 }
-            },
-            showLoading: function() {
-                const loading = document.getElementById('loading');
-                if (loading) loading.style.display = 'flex';
-            },
-            hideLoading: function() {
-                const loading = document.getElementById('loading');
-                if (loading) loading.style.display = 'none';
-            }
-        };
-        
-        // Inicializar agenda
-        window.agendaManager = new AgendaManager(authMock);
-        
-        if (!window.agendaManager.init()) {
-            console.log('❌ Agenda não inicializada - redirecionando...');
-        }
+            };
 
-        const voltarBtn = document.getElementById('voltarBtn');
-        if (voltarBtn) {
-            voltarBtn.addEventListener('click', function() {
-                window.location.href = 'index.html'; // Ajuste conforme necessário
-            });
-        }
-    });
-</script>
+            // Inicializar agenda
+            window.agendaManager = new AgendaManager(authMock);
+
+            if (!window.agendaManager.init()) {
+                console.log('❌ Agenda não inicializada - redirecionando...');
+            }
+
+            const voltarBtn = document.getElementById('voltarBtn');
+            if (voltarBtn) {
+                voltarBtn.addEventListener('click', function () {
+                    window.location.href = 'index.html'; // Ajuste conforme necessário
+                });
+            }
+        });
+    </script>
 
 </body>
+
 </html>

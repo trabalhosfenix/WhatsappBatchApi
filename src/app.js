@@ -6,6 +6,8 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const mongoose = require('mongoose'); // ✅ ADICIONAR
 const mediaBatchRoutes = require('./routes/mediaBatches');
+const messageControlRoutes = require('./routes/messageControl');
+
 
 
 // ✅ CORREÇÃO: Remover import do connectDB e conectar diretamente
@@ -18,7 +20,10 @@ mongoose.connect(MONGODB_URI, {
 .then(() => console.log('✅ Conectado ao MongoDB'))
 .catch(err => console.error('❌ Erro ao conectar MongoDB:', err));
 
-// Importar rotas
+
+
+  // Importar rotas
+
 const authRoutes = require('./routes/auth');
 const batchRoutes = require('./routes/batches');
 const contactGroupRoutes = require('./routes/contactGroups');
@@ -35,6 +40,7 @@ app.use(helmet({
 const allowedOrigins = (process.env.CORS_ORIGIN || '*')
   .split(',')
   .map(o => o.trim());
+
 
 app.use(
   cors({
@@ -66,6 +72,8 @@ app.use('/api/media', mediaBatchRoutes);
 // Servir arquivos de mídia estáticos (se necessário)
 app.use('/media', express.static(path.join(__dirname, 'uploads/media')));
 
+app.use('/api/message-control', messageControlRoutes);
+
 
 // Rate limiting
 const limiter = rateLimit({
@@ -85,8 +93,8 @@ app.use('/api/whatsapp', whatsappRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
@@ -94,7 +102,7 @@ app.get('/health', (req, res) => {
 
 // Rota para a interface web (se existir)
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'WhatsApp Batch API',
     version: '1.0.0',
     endpoints: {
@@ -108,16 +116,16 @@ app.get('/', (req, res) => {
 
 // Rota não encontrada
 app.use('*', (req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
-    error: 'Rota não encontrada' 
+    error: 'Rota não encontrada'
   });
 });
 
 // Error handling
 app.use((error, req, res, next) => {
   console.error('❌ Erro:', error.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     success: false,
     error: 'Erro interno do servidor',
     ...(process.env.NODE_ENV === 'development' && { details: error.message })

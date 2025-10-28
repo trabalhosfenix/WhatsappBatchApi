@@ -1,1 +1,15 @@
-node_modules
+node_modules/
+.env
+.DS_Store
+logs/
+*.log
+.session/
+*.pid
+*.seed
+*.pid.lock
+.npm
+.eslintcache
+.nyc_output
+coverage/
+.whatsapp/
+.tmp/
