@@ -236,6 +236,7 @@ class WhatsAppService {
 
     setupBaileysEvents(socket, sessionName, instanceId, userId, saveCreds) {
         let qrTimeout;
+        let connectionTimeout;
 
         socket.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
@@ -245,22 +246,26 @@ class WhatsAppService {
             try {
                 switch (connection) {
                     case 'close':
-                        console.log(`🔌 [${sessionName}] Conexão fechada`);
+                        console.log(`🔌 [${sessionName}] Conexão fechada`, lastDisconnect?.error);
                         this.connectionStates.set(sessionName, 'disconnected');
 
-                        // Limpar timeout do QR se existir
+                        // Limpar timeouts
                         if (qrTimeout) clearTimeout(qrTimeout);
+                        if (connectionTimeout) clearTimeout(connectionTimeout);
 
                         const shouldReconnect =
                             lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
 
+                        console.log(`🔄 [${sessionName}] Should reconnect: ${shouldReconnect}`);
+
                         if (shouldReconnect) {
                             const attempts = this.reconnectionAttempts.get(sessionName) || 0;
+
                             if (attempts < this.maxReconnectAttempts) {
                                 console.log(`🔄 [${sessionName}] Tentando reconectar... (${attempts + 1}/${this.maxReconnectAttempts})`);
                                 this.reconnectionAttempts.set(sessionName, attempts + 1);
 
-                                const reconnectDelay = Math.min(2000 + (attempts * 1000), 5000);
+                                const reconnectDelay = Math.min(2000 + (attempts * 2000), 10000);
 
                                 // Usar debounce para evitar múltiplas reconexões
                                 if (this.reconnectionTimers.has(sessionName)) {
@@ -290,7 +295,9 @@ class WhatsAppService {
                         this.connectionStates.set(sessionName, 'connected');
                         this.reconnectionAttempts.set(sessionName, 0);
 
-                        // Limpar timer de reconexão
+                        // Limpar timeouts
+                        if (qrTimeout) clearTimeout(qrTimeout);
+                        if (connectionTimeout) clearTimeout(connectionTimeout);
                         if (this.reconnectionTimers.has(sessionName)) {
                             clearTimeout(this.reconnectionTimers.get(sessionName));
                             this.reconnectionTimers.delete(sessionName);
@@ -308,6 +315,18 @@ class WhatsAppService {
                     case 'connecting':
                         console.log(`🔄 [${sessionName}] Conectando...`);
                         this.connectionStates.set(sessionName, 'connecting');
+
+                        // Timeout para conexão muito lenta
+                        if (connectionTimeout) clearTimeout(connectionTimeout);
+                        connectionTimeout = setTimeout(async () => {
+                            if (this.connectionStates.get(sessionName) === 'connecting') {
+                                console.log(`⏰ [${sessionName}] Timeout de conexão`);
+                                await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                                    status: 'timeout'
+                                });
+                            }
+                        }, 30000); // 30 segundos
+
                         await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                             status: 'connecting'
                         });
@@ -323,7 +342,7 @@ class WhatsAppService {
 
                         await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                             qrCode: qrCodeImage,
-                            status: 'connecting'
+                            status: 'qr_code_ready'
                         });
 
                         console.log(`✅ [${sessionName}] QR Code salvo no banco`);
@@ -333,12 +352,17 @@ class WhatsAppService {
                         qrTimeout = setTimeout(async () => {
                             console.log(`⏰ [${sessionName}] QR Code expirado`);
                             await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                                qrCode: null
+                                qrCode: null,
+                                status: 'qr_expired'
                             });
                         }, 120000); // 2 minutos
 
                     } catch (qrError) {
                         console.error(`❌ [${sessionName}] Erro ao gerar QR Code:`, qrError);
+                        await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                            status: 'error',
+                            error: 'Erro ao gerar QR code'
+                        });
                     }
                 }
 
@@ -347,14 +371,8 @@ class WhatsAppService {
             }
         });
 
-        // Evento de credenciais com debounce
-        let credUpdateTimeout;
-        socket.ev.on('creds.update', () => {
-            clearTimeout(credUpdateTimeout);
-            credUpdateTimeout = setTimeout(() => {
-                console.log(`🔐 [${sessionName}] Credenciais atualizadas`);
-            }, 1000);
-        });
+        // Evento de credenciais
+        socket.ev.on('creds.update', saveCreds);
     }
 
     async cleanupInstance(sessionName, instanceId, status) {
