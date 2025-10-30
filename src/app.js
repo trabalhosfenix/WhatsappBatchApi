@@ -7,6 +7,7 @@ const path = require('path');
 const mongoose = require('mongoose'); // ✅ ADICIONAR
 const mediaBatchRoutes = require('./routes/mediaBatches');
 const messageControlRoutes = require('./routes/messageControl');
+const adminRoutes = require('./routes/admin');
 
 
 
@@ -17,12 +18,12 @@ mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('✅ Conectado ao MongoDB'))
-.catch(err => console.error('❌ Erro ao conectar MongoDB:', err));
+  .then(() => console.log('✅ Conectado ao MongoDB'))
+  .catch(err => console.error('❌ Erro ao conectar MongoDB:', err));
 
 
 
-  // Importar rotas
+// Importar rotas
 
 const authRoutes = require('./routes/auth');
 const batchRoutes = require('./routes/batches');
@@ -75,6 +76,7 @@ app.use('/media', express.static(path.join(__dirname, 'uploads/media')));
 app.use('/api/message-control', messageControlRoutes);
 
 
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -114,6 +116,11 @@ app.get('/', (req, res) => {
   });
 });
 
+// Servir admin.html
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/admin.html'));
+});
+
 // Rota não encontrada
 app.use('*', (req, res) => {
   res.status(404).json({
@@ -121,6 +128,9 @@ app.use('*', (req, res) => {
     error: 'Rota não encontrada'
   });
 });
+
+app.use('/api/admin', adminRoutes);
+
 
 // Error handling
 app.use((error, req, res, next) => {

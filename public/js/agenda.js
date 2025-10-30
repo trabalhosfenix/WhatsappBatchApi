@@ -5,6 +5,7 @@ class AgendaManager {
         this.contacts = [];
         this.groups = [];
         this.whatsappInstances = [];
+        this.loadThemes = new ThemeManager().loadThemes;
 
         this.state = {
             currentSection: 'contactsSection',
@@ -55,6 +56,7 @@ class AgendaManager {
         this.setupEventListeners();
         this.setupNavigation();
         this.loadInitialData();
+        this.loadThemes();
 
         console.log('✅ AgendaManager inicializado com sucesso');
         return true;
@@ -150,6 +152,35 @@ class AgendaManager {
 
     setupEventListeners() {
         console.log('📍 Configurando event listeners da agenda...');
+        // ✅ NOVOS BOTÕES DE CARREGAMENTO
+        const loadContactsBtn = document.getElementById('loadContactsBtn');
+        const loadContactsInitialBtn = document.getElementById('loadContactsInitialBtn');
+        const loadGroupsBtn = document.getElementById('loadGroupsBtn');
+        const loadGroupsInitialBtn = document.getElementById('loadGroupsInitialBtn');
+
+        if (loadContactsBtn) {
+            loadContactsBtn.addEventListener('click', () => {
+                this.loadContacts();
+            });
+        }
+
+        if (loadContactsInitialBtn) {
+            loadContactsInitialBtn.addEventListener('click', () => {
+                this.loadContacts();
+            });
+        }
+
+        if (loadGroupsBtn) {
+            loadGroupsBtn.addEventListener('click', () => {
+                this.loadGroups();
+            });
+        }
+
+        if (loadGroupsInitialBtn) {
+            loadGroupsInitialBtn.addEventListener('click', () => {
+                this.loadGroups();
+            });
+        }
 
         // Logout button
         const logoutBtn = document.getElementById('logoutBtn');
@@ -324,7 +355,7 @@ class AgendaManager {
 
                         <div class="form-group">
                             <label for="newContactPhone">Telefone *</label>
-                            <input type="tel" id="newContactPhone" required placeholder="(11) 99999-9999">
+                            <input type="tel" id="newContactPhone" required placeholder="55(11) 99999-9999">
                         </div>
 
                         <div class="form-group">
@@ -496,14 +527,17 @@ class AgendaManager {
     async loadInitialData() {
         try {
             await Promise.all([
-                this.loadContacts(),
-                this.loadGroups(),
+                // this.loadContacts(),
+                // this.loadGroups(),
                 this.loadWhatsAppInstances()
             ]);
             this.updateStats();
             // ✅ RENDERIZAR FILTROS DE INSTÂNCIAS
             this.renderInstanceFilters();
             this.state.filters.platform = 'manual';
+            console.log('✅ Dados iniciais mínimos carregados - aguardando ação do usuário');
+
+
             // Aplicar o filtro inicial
             setTimeout(() => {
                 this.filterContacts();
@@ -519,6 +553,10 @@ class AgendaManager {
     async loadContacts() {
         try {
             console.log('📞 Carregando contatos...');
+
+            // ✅ MOSTRAR ESTADO DE CARREGAMENTO
+            this.showContactsLoadingState();
+
             const response = await this.apiRequest('/api/contact-groups?limit=1000');
 
             window.lastApiResponse = response;
@@ -542,7 +580,7 @@ class AgendaManager {
             }
         } catch (error) {
             console.error('Erro ao carregar contatos:', error);
-            this.renderContacts([]);
+            this.showContactsErrorState(error);
         }
     }
 
@@ -553,6 +591,10 @@ class AgendaManager {
     async loadGroups() {
         try {
             console.log('👥 Carregando grupos...');
+
+            // ✅ MOSTRAR ESTADO DE CARREGAMENTO
+            this.showGroupsLoadingState();
+
             const response = await this.apiRequest('/api/contact-groups?limit=1000');
 
             if (response.success) {
@@ -568,7 +610,7 @@ class AgendaManager {
             }
         } catch (error) {
             console.error('Erro ao carregar grupos:', error);
-            this.renderGroups([]);
+            this.showGroupsErrorState(error);
         }
     }
 
@@ -718,7 +760,7 @@ class AgendaManager {
         `;
             return;
         }
-        
+
 
         contactsList.innerHTML = contacts.map(contact => `
         <div class="contact-card" data-contact-id="${contact._id}">
@@ -1045,6 +1087,68 @@ class AgendaManager {
         document.getElementById('sortGroups').value = 'name';
 
         this.filterGroups();
+    }
+
+    // ✅ NOVO: Mostrar estado de carregamento nos contatos
+    showContactsLoadingState() {
+        const contactsList = document.getElementById('contactsList');
+        if (contactsList) {
+            contactsList.innerHTML = `
+            <div class="loading-state">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Carregando contatos...</p>
+            </div>
+        `;
+        }
+    }
+
+    // ✅ NOVO: Mostrar estado de erro nos contatos
+    showContactsErrorState(error) {
+        const contactsList = document.getElementById('contactsList');
+        if (contactsList) {
+            contactsList.innerHTML = `
+            <div class="empty-state error">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h3>Erro ao carregar contatos</h3>
+                <p>${error.message || 'Tente novamente mais tarde'}</p>
+                <button class="btn btn-primary" onclick="agendaManager.loadContacts()">
+                    <i class="fas fa-redo"></i>
+                    Tentar Novamente
+                </button>
+            </div>
+        `;
+        }
+    }
+
+    // ✅ NOVO: Mostrar estado de carregamento nos grupos
+    showGroupsLoadingState() {
+        const groupsList = document.getElementById('groupsList');
+        if (groupsList) {
+            groupsList.innerHTML = `
+            <div class="loading-state">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Carregando grupos...</p>
+            </div>
+        `;
+        }
+    }
+
+    // ✅ NOVO: Mostrar estado de erro nos grupos
+    showGroupsErrorState(error) {
+        const groupsList = document.getElementById('groupsList');
+        if (groupsList) {
+            groupsList.innerHTML = `
+            <div class="empty-state error">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h3>Erro ao carregar grupos</h3>
+                <p>${error.message || 'Tente novamente mais tarde'}</p>
+                <button class="btn btn-primary" onclick="agendaManager.loadGroups()">
+                    <i class="fas fa-redo"></i>
+                    Tentar Novamente
+                </button>
+            </div>
+        `;
+        }
     }
 
 
@@ -1832,7 +1936,8 @@ class AgendaManager {
         const targetSection = document.getElementById(sectionId);
         if (targetSection) {
             targetSection.classList.add('active');
-            this.loadSectionData(sectionId);
+            // ✅ REMOVER O CARREGAMENTO AUTOMÁTICO
+            // this.loadSectionData(sectionId); // COMENTE ESTA LINHA
         }
 
         this.state.currentSection = sectionId;

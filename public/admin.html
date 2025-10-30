@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Admin - Sistema Otimizado</title>
+    
+    <!-- CSS -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .dashboard-header {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .dashboard-header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .dashboard-header p {
+            opacity: 0.8;
+            font-size: 1.1rem;
+        }
+
+        .controls-bar {
+            background: #f8f9fa;
+            padding: 15px 30px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #219a52;
+        }
+
+        .btn-warning {
+            background: #f39c12;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #e67e22;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .metrics-display {
+            background: #34495e;
+            color: white;
+            padding: 15px 30px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            border-bottom: 1px solid #2c3e50;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 30px;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f8f9fa;
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        .card-badge {
+            background: #3498db;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        .loading-text {
+            font-size: 1.1rem;
+            color: #2c3e50;
+            font-weight: 600;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .data-item {
+            padding: 12px 0;
+            border-bottom: 1px solid #f8f9fa;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .data-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-connected {
+            color: #27ae60;
+            font-weight: 600;
+        }
+
+        .status-disconnected {
+            color: #e74c3c;
+            font-weight: 600;
+        }
+
+        .status-pending {
+            color: #f39c12;
+            font-weight: 600;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .error-message {
+            background: #e74c3c;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        .success-message {
+            background: #27ae60;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .controls-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <div class="dashboard-header">
+            <h1>🚀 Dashboard Admin</h1>
+            <p>Sistema Otimizado com Gestão de Rate Limiting</p>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-bar">
+            <div class="control-group">
+                <button class="btn btn-primary" onclick="dashboardManager.loadData()">
+                    🔄 Carregar Dados (Sequencial)
+                </button>
+                <button class="btn btn-success" onclick="dashboardManager.loadDataParallel()">
+                    ⚡ Carregar Dados (Paralelo)
+                </button>
+                <button class="btn btn-warning" onclick="dashboardManager.reload()">
+                    🗑️ Recarregar com Cache Limpo
+                </button>
+            </div>
+            <div class="control-group">
+                <button class="btn btn-danger" onclick="dashboardManager.forceFallback()">
+                    🆘 Modo Emergência
+                </button>
+                <button class="btn" onclick="showMetrics()" style="background: #9b59b6; color: white;">
+                    📊 Ver Métricas
+                </button>
+            </div>
+        </div>
+
+        <!-- Metrics Display -->
+        <div class="metrics-display" id="metricsDisplay">
+            <div>📈 Sistema Ocioso - Aguardando carregamento...</div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay hidden" id="loadingOverlay">
+            <div class="loading-spinner"></div>
+            <div class="loading-text" id="loadingText">Carregando dados...</div>
+        </div>
+
+        <!-- Dashboard Grid -->
+        <div class="dashboard-grid">
+            <!-- Instances Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">📱 Instâncias WhatsApp</div>
+                    <div class="card-badge" id="instancesBadge">0</div>
+                </div>
+                <div class="card-content" id="instancesContent">
+                    <div class="data-item">
+                        <span>Carregando...</span>
+                        <span class="status-pending">●</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batches Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">📦 Lotes de Mensagens</div>
+                    <div class="card-badge" id="batchesBadge">0</div>
+                </div>
+                <div class="card-content" id="batchesContent">
+                    <div class="data-item">
+                        <span>Carregando...</span>
+                        <span class="status-pending">●</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">👥 Usuários</div>
+                    <div class="card-badge" id="usersBadge">0</div>
+                </div>
+                <div class="card-content" id="usersContent">
+                    <div class="data-item">
+                        <span>Carregando...</span>
+                        <span class="status-pending">●</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Messages Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">💬 Estatísticas de Mensagens</div>
+                    <div class="card-badge" id="messagesBadge">0</div>
+                </div>
+                <div class="card-content" id="messagesContent">
+                    <div class="data-item">
+                        <span>Carregando...</span>
+                        <span class="status-pending">●</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Info Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">⚙️ Informações do Sistema</div>
+                    <div class="card-badge">ℹ️</div>
+                </div>
+                <div class="card-content" id="systemInfoContent">
+                    <div class="data-item">
+                        <span>Status do Cache:</span>
+                        <span id="cacheStatus">Ativo (30s)</span>
+                    </div>
+                    <div class="data-item">
+                        <span>Última Atualização:</span>
+                        <span id="lastUpdate">Nunca</span>
+                    </div>
+                    <div class="data-item">
+                        <span>Modo Operacional:</span>
+                        <span id="operationalMode" class="status-connected">Normal</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // =============================================
+        // FUNÇÕES DE UI E ATUALIZAÇÃO
+        // =============================================
+
+        function showLoading(message = 'Carregando dados...') {
+            const overlay = document.getElementById('loadingOverlay');
+            const loadingText = document.getElementById('loadingText');
+            
+            loadingText.textContent = message;
+            overlay.classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.classList.add('hidden');
+        }
+
+        function updateMetricsDisplay(metrics) {
+            const display = document.getElementById('metricsDisplay');
+            if (!metrics) {
+                display.innerHTML = '<div>📈 Sistema Ocioso - Aguardando carregamento...</div>';
+                return;
+            }
+
+            const successRate = metrics.totalRequests > 0 
+                ? ((metrics.successfulRequests / metrics.totalRequests) * 100).toFixed(1)
+                : 0;
+
+            display.innerHTML = `
+                <div>📊 Requisições: ${metrics.totalRequests} | ✅ Sucessos: ${metrics.successfulRequests} | ❌ Falhas: ${metrics.failedRequests} | 🔄 Retries: ${metrics.retryAttempts} | 🎯 Taxa: ${successRate}%</div>
+            `;
+        }
+
+        function updateLastUpdate() {
+            const now = new Date();
+            document.getElementById('lastUpdate').textContent = 
+                now.toLocaleTimeString() + ' - ' + now.toLocaleDateString();
+        }
+
+        function showMetrics() {
+            const metrics = window.dashboardManager?.getMetrics();
+            if (metrics) {
+                alert(`
+📊 MÉTRICAS DO SISTEMA:
+
+Requisições Totais: ${metrics.totalRequests}
+Requisições Bem-sucedidas: ${metrics.successfulRequests}
+Requisições Com Falha: ${metrics.failedRequests}
+Tentativas de Retry: ${metrics.retryAttempts}
+Cache Hits: ${metrics.cacheHits || 0}
+
+Taxa de Sucesso: ${metrics.totalRequests > 0 ? ((metrics.successfulRequests / metrics.totalRequests) * 100).toFixed(1) : 0}%
+                `);
+            } else {
+                alert('Métricas não disponíveis ainda.');
+            }
+        }
+
+        // =============================================
+        // FUNÇÕES DE ATUALIZAÇÃO DE DADOS
+        // =============================================
+
+        function updateInstancesSection(data) {
+            if (!data) return;
+
+            const badge = document.getElementById('instancesBadge');
+            const content = document.getElementById('instancesContent');
+
+            badge.textContent = data.total || 0;
+
+            if (data.instances && data.instances.length > 0) {
+                let html = '';
+                data.instances.forEach(instance => {
+                    const statusClass = instance.status === 'connected' ? 'status-connected' : 'status-disconnected';
+                    const statusIcon = instance.status === 'connected' ? '🟢' : '🔴';
+                    
+                    html += `
+                        <div class="data-item">
+                            <span>${statusIcon} ${instance.name}</span>
+                            <span class="${statusClass}">${instance.status}</span>
+                        </div>
+                    `;
+                });
+
+                // Adicionar resumo
+                html += `
+                    <div class="data-item" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #f8f9fa;">
+                        <span><strong>Resumo:</strong></span>
+                        <span>🟢 ${data.connected || 0} | 🔴 ${data.disconnected || 0}</span>
+                    </div>
+                `;
+
+                content.innerHTML = html;
+            } else {
+                content.innerHTML = `
+                    <div class="data-item">
+                        <span>Nenhuma instância encontrada</span>
+                        <span class="status-disconnected">●</span>
+                    </div>
+                `;
+            }
+        }
+
+        function updateBatchesSection(data) {
+            if (!data) return;
+
+            const badge = document.getElementById('batchesBadge');
+            const content = document.getElementById('batchesContent');
+
+            badge.textContent = data.total || 0;
+
+            if (data.batches && data.batches.length > 0) {
+                let html = '';
+                data.batches.slice(0, 5).forEach(batch => { // Mostrar apenas os 5 primeiros
+                    const statusClass = 'status-pending'; // Simplificado para exemplo
+                    
+                    html += `
+                        <div class="data-item">
+                            <span>📦 ${batch.name || `Lote ${batch.id}`}</span>
+                            <span class="${statusClass}">${batch.status || 'pending'}</span>
+                        </div>
+                    `;
+                });
+
+                if (data.batches.length > 5) {
+                    html += `
+                        <div class="data-item">
+                            <span>...</span>
+                            <span>+${data.batches.length - 5} mais</span>
+                        </div>
+                    `;
+                }
+
+                // Adicionar resumo
+                html += `
+                    <div class="data-item" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #f8f9fa;">
+                        <span><strong>Resumo:</strong></span>
+                        <span>⏳ ${data.pending || 0} | ✅ ${data.sent || 0} | ❌ ${data.failed || 0}</span>
+                    </div>
+                `;
+
+                content.innerHTML = html;
+            } else {
+                content.innerHTML = `
+                    <div class="data-item">
+                        <span>Nenhum lote encontrado</span>
+                        <span class="status-pending">●</span>
+                    </div>
+                `;
+            }
+        }
+
+        function updateUsersSection(data) {
+            if (!data) return;
+
+            const badge = document.getElementById('usersBadge');
+            const content = document.getElementById('usersContent');
+
+            badge.textContent = data.total || 0;
+
+            if (data.users && data.users.length > 0) {
+                let html = '';
+                data.users.slice(0, 5).forEach(user => { // Mostrar apenas os 5 primeiros
+                    const statusClass = user.status === 'active' ? 'status-connected' : 'status-disconnected';
+                    
+                    html += `
+                        <div class="data-item">
+                            <span>👤 ${user.name || `Usuário ${user.id}`}</span>
+                            <span class="${statusClass}">${user.status || 'inactive'}</span>
+                        </div>
+                    `;
+                });
+
+                if (data.users.length > 5) {
+                    html += `
+                        <div class="data-item">
+                            <span>...</span>
+                            <span>+${data.users.length - 5} mais</span>
+                        </div>
+                    `;
+                }
+
+                // Adicionar resumo
+                html += `
+                    <div class="data-item" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #f8f9fa;">
+                        <span><strong>Resumo:</strong></span>
+                        <span>🟢 ${data.active || 0} | 🔴 ${data.inactive || 0}</span>
+                    </div>
+                `;
+
+                content.innerHTML = html;
+            } else {
+                content.innerHTML = `
+                    <div class="data-item">
+                        <span>Nenhum usuário encontrado</span>
+                        <span class="status-disconnected">●</span>
+                    </div>
+                `;
+            }
+        }
+
+        function updateMessagesSection(data) {
+            if (!data) return;
+
+            const badge = document.getElementById('messagesBadge');
+            const content = document.getElementById('messagesContent');
+
+            badge.textContent = data.total || 0;
+
+            let html = '';
+            
+            // Estatísticas detalhadas
+            const stats = [
+                { label: 'Total de Mensagens', value: data.total || 0, icon: '💬' },
+                { label: 'Enviadas', value: data.sent || 0, icon: '📤' },
+                { label: 'Entregues', value: data.delivered || 0, icon: '✅' },
+                { label: 'Lidas', value: data.read || 0, icon: '👁️' },
+                { label: 'Falhas', value: data.failed || 0, icon: '❌' }
+            ];
+
+            stats.forEach(stat => {
+                html += `
+                    <div class="data-item">
+                        <span>${stat.icon} ${stat.label}</span>
+                        <span><strong>${stat.value}</strong></span>
+                    </div>
+                `;
+            });
+
+            content.innerHTML = html;
+        }
+
+        function updateDashboardSummary(instances, batches, users, messages) {
+            // Atualizar informações do sistema
+            updateLastUpdate();
+            document.getElementById('operationalMode').textContent = 'Normal';
+            document.getElementById('operationalMode').className = 'status-connected';
+            
+            // Atualizar métricas em tempo real
+            const metrics = window.dashboardManager?.getMetrics();
+            updateMetricsDisplay(metrics);
+        }
+
+        function useEmergencyFallback() {
+            document.getElementById('operationalMode').textContent = 'Emergência';
+            document.getElementById('operationalMode').className = 'status-disconnected';
+            
+            // Forçar atualização das métricas
+            const metrics = window.dashboardManager?.getMetrics();
+            updateMetricsDisplay(metrics);
+        }
+
+        // =============================================
+        // INICIALIZAÇÃO
+        // =============================================
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Dashboard inicializado!');
+            
+            // Configurar event listeners para os botões
+            const buttons = document.querySelectorAll('.btn');
+            buttons.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    // Feedback visual
+                    this.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        this.style.transform = '';
+                    }, 150);
+                });
+            });
+
+            // Iniciar carregamento automático após 2 segundos
+            setTimeout(() => {
+                if (window.dashboardManager) {
+                    dashboardManager.loadData();
+                }
+            }, 2000);
+        });
+
+        // Expor funções globalmente para os botões HTML
+        window.showMetrics = showMetrics;
+    </script>
+
+    <!-- Incluir o script otimi
+     
+    
+    
+    zado -->
+    <script src="js/dashboard-optimized.js"></script>
+</body>
+</html>
