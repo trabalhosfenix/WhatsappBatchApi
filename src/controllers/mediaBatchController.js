@@ -2,43 +2,117 @@ const MediaBatch = require('../models/MediaBatch');
 const ContactGroup = require('../models/ContactGroup');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const mediaService = require('../services/mediaService');
-const whatsappBaileysService = require('../services/whatsappService');
 
-// ✅ SERVIÇO DE RATE LIMITING - IMPLEMENTAÇÃO CRÍTICA
+
+// ✅ SERVIÇO DE RATE LIMITING ULTRA CONSERVADOR + LIMITE DIÁRIO
+// ✅ NOVO RATE LIMIT SERVICE COMPLETO COM BANCO DE DADOS E MEMÓRIA
+const Limit = require('../models/Limit'); // 📁 novo modelo persistente
+
+
 class RateLimitService {
   constructor() {
-    this.limits = new Map(); // instanceId -> {messageCount, mediaCount, lastReset}
+    // Memória rápida para controle imediato (1 min)
+    this.limits = new Map(); // key = instanceId-type
   }
 
-  async checkRateLimit(instanceId, type = 'media') {
-    const now = Date.now();
-    const windowSize = 60000; // 1 minuto
+  // 🔐 Define o contexto do usuário antes de cada verificação
+  setUserContext(userId) {
+    this.currentUserId = userId;
+  }
 
-    // Limites conservadores por tipo
+  // 🗓️ Busca ou cria registro persistente de limite diário
+
+  async getOrCreateLimit(userId, instanceId) {
+    if (!userId) throw new Error('❌ getOrCreateLimit: userId não definido');
+    if (!instanceId) throw new Error('❌ getOrCreateLimit: instanceId não definido');
+
+    // Normaliza o ID (pode vir como objeto Mongoose)
+    const instanceIdValue = instanceId._id ? instanceId._id : instanceId;
+
+    let limit = await Limit.findOne({ userId, instanceId: instanceIdValue });
+
+    if (!limit) {
+      console.log(`🆕 Criando novo registro de limite para instância ${instanceIdValue}`);
+      limit = await Limit.create({
+        userId,
+        instanceId: instanceIdValue,
+        remaining: 150,
+        lastReset: new Date()
+      });
+    }
+
+    const now = Date.now();
+    const lastReset = new Date(limit.lastReset).getTime();
+    const dailyWindow = 24 * 60 * 60 * 1000;
+
+    // Reset automático se passou 1 dia
+    if (now - lastReset > dailyWindow) {
+      console.log(`♻️ Resetando limite diário para instância ${instanceIdValue}`);
+      limit.remaining = 150;
+      limit.lastReset = new Date();
+      await limit.save();
+    }
+
+    return limit;
+  }
+
+
+  // ⚖️ Verifica se o envio pode ser feito (por minuto e por dia)
+
+  async checkRateLimit(instanceId, type = 'media') {
+    if (!this.currentUserId) {
+      throw new Error('Contexto de usuário não definido para RateLimitService');
+    }
+
+    if (!instanceId) {
+      console.warn('⚠️ [RateLimit] instanceId ausente na chamada de checkRateLimit');
+      throw new Error('instanceId é obrigatório para verificação de limite');
+    }
+
+    const userId = this.currentUserId;
+    const now = Date.now();
+    const windowSize = 60 * 1000; // 1 minuto
+    const dailyWindow = 24 * 60 * 60 * 1000;
+
+    // 🔢 Limites ultra conservadores por minuto
     const maxLimits = {
-      'message': 20,    // 20 mensagens/minuto
-      'media': 10,      // 10 mídias/minuto  
-      'group': 5        // 5 mensagens em grupo/minuto
+      message: 2,
+      media: 1,
+      group: 1
     };
 
     const key = `${instanceId}-${type}`;
 
-    // Inicializar ou resetar janela
+    // ⏱️ Controle por minuto (em memória)
     if (!this.limits.has(key) || (now - this.limits.get(key).lastReset) > windowSize) {
-      this.limits.set(key, {
-        count: 0,
-        lastReset: now,
-        type: type
-      });
+      this.limits.set(key, { count: 0, lastReset: now });
     }
 
     const limitData = this.limits.get(key);
 
-    // Verificar se excedeu o limite
+    // 🧮 Controle diário (no banco)
+    const limit = await this.getOrCreateLimit(userId, instanceId);
+
+    // 🚫 Verifica se atingiu limite diário
+    if (limit.remaining <= 0) {
+      const nextReset = new Date(limit.lastReset.getTime() + dailyWindow);
+      return {
+        allowed: false,
+        reason: 'daily_limit',
+        waitTime: nextReset - now,
+        resetTime: nextReset,
+        current: 0,
+        max: 150,
+        message: `Limite diário de 150 mensagens excedido. Próximo reset em ${nextReset.toLocaleTimeString()}`
+      };
+    }
+
+    // 🚫 Verifica se atingiu limite por minuto
     if (limitData.count >= maxLimits[type]) {
       const waitTime = windowSize - (now - limitData.lastReset);
       return {
         allowed: false,
+        reason: 'minute_limit',
         waitTime,
         current: limitData.count,
         max: maxLimits[type],
@@ -46,58 +120,273 @@ class RateLimitService {
       };
     }
 
-    // Incrementar contador
+    // ✅ Incrementa contadores em memória
     limitData.count++;
 
     return {
       allowed: true,
       remaining: maxLimits[type] - limitData.count,
+      dailyRemaining: limit.remaining,
       current: limitData.count,
-      max: maxLimits[type]
+      dailyCurrent: 150 - limit.remaining,
+      max: maxLimits[type],
+      dailyMax: 150
     };
   }
 
-  // Limpar limites antigos (prevenção de memory leak)
+
+  // ✅ Decrementa limite diário no banco após envio bem-sucedido
+  async decrementDailyLimit(instanceId) {
+    if (!this.currentUserId) {
+      throw new Error('Contexto de usuário não definido para RateLimitService');
+    }
+
+    if (!instanceId) {
+      console.warn('⚠️ [RateLimit] instanceId ausente na chamada de decrementDailyLimit');
+      throw new Error('instanceId é obrigatório para decrementar limite');
+    }
+
+    const userId = this.currentUserId;
+    const limit = await this.getOrCreateLimit(userId, instanceId);
+
+    limit.remaining = Math.max(0, limit.remaining - 1);
+    await limit.save();
+
+    console.log(`📉 [RateLimit] Decremento realizado: usuário ${userId}, instância ${instanceId}, restante ${limit.remaining}`);
+
+    return limit.remaining;
+  }
+
+  // 📊 Retorna status atual dos limites
+  async getLimitStatus(userId, instanceId) {
+    const now = Date.now();
+    const limit = await this.getOrCreateLimit(userId, instanceId);
+    const nextReset = new Date(limit.lastReset.getTime() + 24 * 60 * 60 * 1000);
+
+    return {
+      daily: {
+        current: 150 - limit.remaining,
+        max: 150,
+        remaining: limit.remaining,
+        resetTime: nextReset,
+        resetIn: nextReset - now
+      },
+      minute: {
+        media: this.limits.get(`${instanceId}-media`)?.count || 0,
+        message: this.limits.get(`${instanceId}-message`)?.count || 0
+      }
+    };
+  }
+
+  // 🧹 Limpa registros antigos da memória
   cleanupOldLimits() {
     const now = Date.now();
-    const oneHour = 3600000;
-
+    const oneDay = 24 * 60 * 60 * 1000;
     for (const [key, data] of this.limits.entries()) {
-      if (now - data.lastReset > oneHour) {
+      if ((now - data.lastReset) > oneDay) {
         this.limits.delete(key);
       }
     }
   }
 }
 
-// ✅ INSTÂNCIA GLOBAL DO RATE LIMITER
+// ✅ Instância global
 const rateLimitService = new RateLimitService();
+module.exports = rateLimitService;
 
-// ✅ FUNÇÃO AUXILIAR PARA DELAY INTELIGENTE
-const smartDelay = async (instanceId, batchOptions) => {
-  const baseDelay = batchOptions?.delayBetweenMessages || 2000;
 
-  // Verificar rate limit
-  const limitCheck = await rateLimitService.checkRateLimit(instanceId, 'media');
+// ✅ FUNÇÃO PARA VERIFICAR INSTÂNCIA WHATSAPP
+// ✅ VERIFICAÇÃO E RECONEXÃO AUTOMÁTICA DE INSTÂNCIA WHATSAPP
+const checkWhatsAppInstance = async (instanceId, userId) => {
+  try {
+    console.log(`🔍 Verificando instância WhatsApp: ${instanceId}`);
 
-  if (!limitCheck.allowed) {
-    console.log(`⏳ Rate limit excedido! Aguardando ${limitCheck.resetIn}s...`);
-    await new Promise(resolve => setTimeout(resolve, limitCheck.waitTime + 1000));
+    const instance = await WhatsAppInstance.findOne({ _id: instanceId, userId });
 
-    // Log de warning
-    console.warn(`🚨 RATE LIMIT: Instância ${instanceId} - ${limitCheck.current}/${limitCheck.max} mídias no último minuto`);
-    return true; // Indicar que houve delay por rate limit
+    if (!instance) {
+      throw new Error('Instância WhatsApp não encontrada');
+    }
+
+    const whatsappService = require('../services/whatsappService');
+    const socket = whatsappService.sockets.get(instance.sessionName);
+
+    // 🧠 1️⃣ CASO 1: Socket ativo e usuário logado → OK
+    if (socket && socket.user) {
+      console.log(`✅ Socket ativo para: ${instance.sessionName}`);
+      return {
+        instance,
+        socket,
+        isConnected: true,
+        sessionName: instance.sessionName,
+        phoneNumber: instance.phoneNumber
+      };
+    }
+
+    // ⚠️ 2️⃣ CASO 2: Socket ausente, mas instância no banco está marcada como conectada
+    if (instance.status === 'connected' && !socket) {
+      console.warn(`⚠️ Socket ausente, mas status é "connected". Tentando reconectar...`);
+
+      try {
+        await whatsappService.reconnectInstance(instance.sessionName, userId);
+        await new Promise(resolve => setTimeout(resolve, 3000)); // aguarda estabilização
+
+        const newSocket = whatsappService.sockets.get(instance.sessionName);
+        if (newSocket && newSocket.user) {
+          console.log(`♻️ Reconexão bem-sucedida para: ${instance.sessionName}`);
+          return {
+            instance,
+            socket: newSocket,
+            isConnected: true,
+            sessionName: instance.sessionName,
+            phoneNumber: instance.phoneNumber
+          };
+        } else {
+          console.warn(`⚠️ Reconexão falhou, socket ainda inativo.`);
+          await WhatsAppInstance.findByIdAndUpdate(instanceId, { status: 'disconnected' });
+        }
+      } catch (reconnectError) {
+        console.error(`❌ Falha ao tentar reconectar ${instance.sessionName}:`, reconnectError.message);
+        await WhatsAppInstance.findByIdAndUpdate(instanceId, { status: 'disconnected' });
+      }
+    }
+
+    // 🚫 3️⃣ CASO 3: Instância está desconectada ou falha persistente
+    if (instance.status !== 'connected') {
+      throw new Error(`Instância "${instance.sessionName}" não está conectada. Status: ${instance.status}`);
+    }
+
+    // 🧩 4️⃣ CASO 4: Socket não ativo, mas continuar se status for "connected"
+    console.warn(`⚠️ Continuando sem socket ativo (modo tolerante): ${instance.sessionName}`);
+
+    return {
+      instance,
+      socket: null,
+      isConnected: true,
+      sessionName: instance.sessionName,
+      phoneNumber: instance.phoneNumber
+    };
+
+  } catch (error) {
+    console.error(`❌ Erro na verificação da instância:`, error);
+    throw error;
   }
-
-  // Delay normal entre mensagens
-  if (baseDelay > 0) {
-    await new Promise(resolve => setTimeout(resolve, baseDelay));
-  }
-
-  return false;
 };
 
-// ✅ FUNÇÃO DE PROCESSAMENTO COM RATE LIMITING
+// ✅ UPLOAD DE MÍDIA COM VERIFICAÇÃO DE INSTÂNCIA
+const uploadMedia = async (req, res) => {
+  try {
+    console.log('📤 Iniciando upload de mídia...');
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nenhum arquivo enviado'
+      });
+    }
+
+    // ✅ VERIFICAR SE VEIO INSTÂNCIA ID NO BODY (para validação)
+    const { whatsappInstanceId } = req.body;
+
+    if (whatsappInstanceId) {
+      console.log(`🔍 Validando instância antes do upload: ${whatsappInstanceId}`);
+      await checkWhatsAppInstance(whatsappInstanceId, req.user._id);
+      console.log('✅ Instância validada - prosseguindo com upload');
+    } else {
+      console.log('⚠️ Upload sem validação de instância (whatsappInstanceId não fornecido)');
+    }
+
+    const mediaItems = [];
+
+    console.log(`📁 Processando ${req.files.length} arquivo(s)...`);
+
+    for (const file of req.files) {
+      console.log(`💾 Salvando arquivo: ${file.originalname}`);
+      const mediaItem = await mediaService.saveMediaFile(file, req.user._id);
+      mediaItems.push(mediaItem);
+      console.log(`✅ Arquivo salvo: ${mediaItem.fileName}`);
+    }
+
+    res.json({
+      success: true,
+      message: `${mediaItems.length} arquivo(s) de mídia salvos com sucesso`,
+      mediaItems
+    });
+
+  } catch (error) {
+    console.error('❌ Erro no upload de mídia:', error);
+
+    // ✅ TRATAMENTO ESPECÍFICO PARA ERROS DE INSTÂNCIA
+    if (error.message.includes('Instância') || error.message.includes('conectada')) {
+      return res.status(400).json({
+        success: false,
+        error: `Não foi possível validar a instância WhatsApp: ${error.message}`
+      });
+    }
+
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+
+// ✅ FUNÇÃO DE DELAY INTELIGENTE COM RATE LIMIT PERSISTENTE
+
+// ✅ FUNÇÃO DE DELAY INTELIGENTE COM RATE LIMIT PERSISTENTE
+const smartDelay = async (userId, instanceId, batchOptions = {}) => {
+  try {
+    // 🔒 Verificações iniciais
+    if (!userId) {
+      throw new Error('userId ausente no smartDelay');
+    }
+    if (!instanceId) {
+      throw new Error('instanceId ausente no smartDelay');
+    }
+
+    // 🔧 Configurar contexto de usuário antes de verificar limite
+    rateLimitService.setUserContext(userId);
+
+    // ⏱️ Delay base configurável (padrão: 5 segundos)
+    const baseDelay = batchOptions?.delayBetweenMessages || 5000;
+
+    // ✅ Verifica e aplica limites
+    const limitCheck = await rateLimitService.checkRateLimit(instanceId, 'media');
+
+    // 🚫 Se limite diário foi atingido
+    if (!limitCheck.allowed && limitCheck.reason === 'daily_limit') {
+      throw new Error(limitCheck.message);
+    }
+
+    // 🚫 Se limite por minuto foi atingido → aguarda
+    if (!limitCheck.allowed && limitCheck.reason === 'minute_limit') {
+      console.log(`⚠️ Rate limit atingido (${limitCheck.current}/${limitCheck.max}). Aguardando ${limitCheck.resetIn}s...`);
+      await new Promise(resolve => setTimeout(resolve, limitCheck.waitTime + 1500));
+      return { hadDelay: true, reason: 'minute_limit', wait: limitCheck.waitTime };
+    }
+
+    // ✅ Delay normal (com jitter aleatório ±1.5s)
+    const jitter = Math.random() * 3000 - 1500;
+    const dynamicDelay = Math.max(3000, baseDelay + jitter);
+    await new Promise(resolve => setTimeout(resolve, dynamicDelay));
+
+    return {
+      hadDelay: true,
+      reason: 'normal_delay',
+      delay: dynamicDelay,
+      dailyRemaining: limitCheck.dailyRemaining
+    };
+  } catch (error) {
+    console.error('❌ Erro no smartDelay:', error.message);
+    throw error;
+  }
+};
+
+
+
+
+// ✅ FUNÇÃO PRINCIPAL DE PROCESSAMENTO (REVISTA E CORRIGIDA)
+
 const processMediaBatch = async (batchId) => {
   try {
     console.log(`🔄 Processando lote de mídia: ${batchId}`);
@@ -106,91 +395,47 @@ const processMediaBatch = async (batchId) => {
       .populate('contactGroupIds')
       .populate('whatsappInstanceId');
 
-    if (!batch) {
-      throw new Error('Lote de mídia não encontrado');
+    if (!batch) throw new Error('Lote de mídia não encontrado');
+
+    // ✅ Validação forte antes de continuar
+    if (!batch.userId) {
+      throw new Error('userId ausente no lote');
+    }
+    if (!batch.whatsappInstanceId || !batch.whatsappInstanceId._id) {
+      throw new Error('Instância WhatsApp ausente ou inválida no lote');
     }
 
-    // ✅ DEBUG: VERIFICAR CAPTION NO BATCH DO BANCO
-    console.log('🔍 DEBUG - Caption no batch do banco:', {
-      batchCaption: batch.caption,
-      optionsCaption: batch.options?.caption,
-      fullOptions: batch.options
-    });
-
-    // ✅ CORREÇÃO: BUSCAR CAPTION CORRETAMENTE
-    const caption = batch.caption || batch.options?.caption || '';
-    console.log(`🖋️ Legenda final a ser usada: "${caption}"`);
-
-    // Verificar se a instância ainda existe e está conectada
-    if (!batch.whatsappInstanceId) {
-      throw new Error('Instância WhatsApp associada ao lote não encontrada');
-    }
+    // ✅ Configurar contexto do RateLimitService
+    rateLimitService.setUserContext(batch.userId);
 
     const whatsappInstance = batch.whatsappInstanceId;
+    const instanceId = whatsappInstance._id;
 
-    console.log(`🔍 Verificando instância: ${whatsappInstance.sessionName} (Status: ${whatsappInstance.status})`);
-
-    if (whatsappInstance.status !== 'connected') {
-      throw new Error(`Instância WhatsApp não está conectada. Status atual: ${whatsappInstance.status}`);
+    // ✅ Verificar limite diário antes de iniciar
+    const limitStatus = await rateLimitService.getLimitStatus(batch.userId, instanceId);
+    if (limitStatus && limitStatus.daily.remaining <= 0) {
+      throw new Error(
+        `LIMITE_DIARIO_EXCEDIDO: ${limitStatus.daily.current}/${limitStatus.daily.max} mensagens hoje. Retome amanhã.`
+      );
     }
 
-    // Atualizar status para processando
-    await MediaBatch.findByIdAndUpdate(batchId, {
-      status: 'processing'
-    });
+    const caption = batch.caption || batch.options?.caption || '';
+    console.log(`🔍 Iniciando: ${batch.mediaItems.length} mídias para ${batch.contactGroupIds.length} grupos`);
+    console.log(`📊 Limite diário restante: ${limitStatus.daily.remaining} mensagens`);
 
-    // ✅ VERIFICAÇÃO ROBUSTA DA CONEXÃO
-    let socket = whatsappBaileysService.sockets.get(whatsappInstance.sessionName);
+    // ✅ Verificar instância WhatsApp antes de processar
+    await checkWhatsAppInstance(instanceId, batch.userId);
 
-    if (!socket) {
-      console.log(`❌ Socket não encontrado para: ${whatsappInstance.sessionName}`);
-      console.log(`📋 Sockets ativos: ${Array.from(whatsappBaileysService.sockets.keys())}`);
+    // ✅ Atualizar status
+    await MediaBatch.findByIdAndUpdate(batchId, { status: 'processing' });
 
-      try {
-        console.log(`🔄 Tentando reconectar instância: ${whatsappInstance.sessionName}`);
-        await whatsappBaileysService.reconnectInstance(
-          whatsappInstance.sessionName,
-          batch.userId
-        );
-
-        await new Promise(resolve => setTimeout(resolve, 5000));
-
-        const reconnectedSocket = whatsappBaileysService.sockets.get(whatsappInstance.sessionName);
-        if (!reconnectedSocket) {
-          throw new Error('Falha na reconexão automática da instância');
-        }
-
-        console.log(`✅ Instância reconectada com sucesso`);
-        socket = reconnectedSocket;
-      } catch (reconnectError) {
-        throw new Error(`Instância não disponível e falha na reconexão: ${reconnectError.message}`);
-      }
-    }
-
-    if (!socket || !socket.user) {
-      console.log(`⚠️ Socket encontrado mas não está autenticado: ${whatsappInstance.sessionName}`);
-      try {
-        await whatsappBaileysService.recreateInstance(whatsappInstance.sessionName, batch.userId);
-        await new Promise(resolve => setTimeout(resolve, 8000));
-
-        socket = whatsappBaileysService.sockets.get(whatsappInstance.sessionName);
-        if (!socket || !socket.user) {
-          throw new Error(`Instância WhatsApp não está autenticada após tentativas: ${whatsappInstance.sessionName}`);
-        }
-      } catch (authError) {
-        throw new Error(`Falha na autenticação da instância: ${authError.message}`);
-      }
-    }
-
-    console.log(`✅ Socket válido encontrado para: ${whatsappInstance.sessionName}`);
-
-    // Coletar todos os contatos únicos dos grupos
+    // ✅ Coletar contatos
     const allContacts = [];
     const contactMap = new Map();
 
     for (const group of batch.contactGroupIds) {
       const contactGroup = await ContactGroup.findById(group._id);
-      if (contactGroup && contactGroup.contacts) {
+      if (contactGroup?.contacts) {
         for (const contact of contactGroup.contacts) {
           const contactKey = `${contact.phone}-${contact.whatsappId || contact.phone}`;
           if (!contactMap.has(contactKey)) {
@@ -204,55 +449,39 @@ const processMediaBatch = async (batchId) => {
       }
     }
 
-    console.log(`📨 Enviando ${batch.mediaItems.length} mídia(s) para ${allContacts.length} contato(s)`);
-    console.log(`📊 Rate Limit configurado: Máximo 10 mídias/minuto por instância`);
+    console.log(`📨 Total de contatos únicos: ${allContacts.length}`);
 
     let sentCount = 0;
     let failedCount = 0;
     const results = [];
-    let rateLimitHits = 0;
+    let dailyLimitExceeded = false;
 
-    // ✅ LOOP COM RATE LIMITING IMPLEMENTADO
+    // ✅ Loop principal de envio
     for (const contact of allContacts) {
+      if (dailyLimitExceeded) break;
+
       for (const mediaItem of batch.mediaItems) {
         try {
-          // ✅ VERIFICAÇÃO DE RATE LIMIT ANTES DE CADA ENVIO
-          const hadRateLimitDelay = await smartDelay(whatsappInstance._id, batch.options);
-          if (hadRateLimitDelay) {
-            rateLimitHits++;
+          // ✅ Verificar limites antes de cada envio
+          const delayResult = await smartDelay(batch.userId, instanceId, batch.options);
+
+          if (delayResult.hadDelay) {
+            console.log(`⏳ Aguardando ${delayResult.delay}ms antes do próximo envio...`);
           }
 
-          let jid;
-          if (contact.whatsappId && contact.whatsappId.includes('@')) {
-            jid = contact.whatsappId;
-          } else {
-            const phone = contact.phone.replace(/\D/g, '');
-            jid = `${phone}@s.whatsapp.net`;
-          }
+          const jid = contact.whatsappId && contact.whatsappId.includes('@')
+            ? contact.whatsappId
+            : `${contact.phone.replace(/\D/g, '')}@s.whatsapp.net`;
 
-          console.log(`📤 Enviando ${mediaItem.originalName} para: ${contact.name} (${jid})`);
+          console.log(`📤 Enviando ${mediaItem.originalName} para: ${contact.name}`);
 
-          // ✅ CORREÇÃO CRÍTICA: PASSAR OPTIONS COM CAPTION CORRETO
-          const sendOptions = {
-            ...(batch.options || {}),
-            caption: caption // ← GARANTIR QUE O CAPTION VAI NAS OPTIONS
-          };
-
-          console.log('📦 Mídia:', {
-            originalName: mediaItem.originalName,
-            mimeType: mediaItem.mimeType,
-            url: mediaItem.url
-          });
-          console.log('📝 Opções:', sendOptions);
-          console.log('🖋️ Legenda:', `"${caption}"`);
-
-          // ✅ ENVIO COM PROTEÇÃO DE RATE LIMITING
-          const mediaResult = await whatsappBaileysService.sendMediaToContact(
+          // ✅ Envio via mediaService
+          const sendResult = await mediaService.sendMediaToContact(
             whatsappInstance.sessionName,
             jid,
             mediaItem,
-            caption, // ← PASSAR CAPTION DIRETAMENTE TAMBÉM
-            sendOptions // ← PASSAR OPTIONS COM CAPTION
+            caption,
+            batch.options
           );
 
           sentCount++;
@@ -260,30 +489,41 @@ const processMediaBatch = async (batchId) => {
             contact: contact.name,
             phone: contact.phone,
             mediaItem: mediaItem.originalName,
-            group: contact.groupName,
             status: 'sent',
-            messageId: mediaResult?.messageId,
-            timestamp: new Date(),
-            caption: caption // ← REGISTRAR QUAL CAPTION FOI ENVIADO
+            messageId: sendResult?.messageId,
+            timestamp: new Date()
           });
 
-          console.log(`✅ Mídia enviada para ${contact.name} (${sentCount}/${batch.progress.total})`);
-
-          // ✅ ATUALIZAR PROGRESSO NO BANCO
+          // ✅ Atualizar progresso do lote
           await MediaBatch.findByIdAndUpdate(batchId, {
             'progress.sent': sentCount,
             'progress.failed': failedCount
           });
 
+          // ✅ Decrementar limite diário persistente
+          const remaining = await rateLimitService.decrementDailyLimit(instanceId);
+          if (remaining <= 0) {
+            console.log('🚨 LIMITE DIÁRIO ATINGIDO - PARANDO LOTE');
+            dailyLimitExceeded = true;
+            break;
+          }
+
+          console.log(`✅ ${sentCount}/${batch.progress.total} - ${contact.name} (Restam ${remaining})`);
+
         } catch (error) {
-          console.error(`❌ Erro ao enviar mídia para ${contact.name}:`, error.message);
+          console.error(`❌ Erro para ${contact.name}:`, error.message);
+
+          if (error.message.includes('LIMITE_DIARIO_EXCEDIDO')) {
+            console.log('🚨 LIMITE DIÁRIO ATINGIDO - PARANDO LOTE');
+            dailyLimitExceeded = true;
+            break;
+          }
 
           failedCount++;
           results.push({
             contact: contact.name,
             phone: contact.phone,
             mediaItem: mediaItem.originalName,
-            group: contact.groupName,
             status: 'failed',
             error: error.message,
             timestamp: new Date()
@@ -292,43 +532,34 @@ const processMediaBatch = async (batchId) => {
           await MediaBatch.findByIdAndUpdate(batchId, {
             'progress.failed': failedCount
           });
-
-          // ✅ TRATAMENTO ESPECÍFICO PARA ERROS DE RATE LIMIT
-          if (error.message.includes('rate limit') || error.message.includes('too many') || error.message.includes('429')) {
-            console.warn(`🚨 DETECTADO RATE LIMIT DO WHATSAPP! Aguardando 2 minutos...`);
-            await new Promise(resolve => setTimeout(resolve, 120000)); // 2 minutos
-            rateLimitHits++;
-          }
         }
       }
     }
 
-    // ✅ STATUS FINAL COM INFORMAÇÕES DE RATE LIMIT
-    const finalStatus = failedCount === (allContacts.length * batch.mediaItems.length) ? 'failed' : 'completed';
+    // ✅ Status final
+    let finalStatus = 'completed';
+    if (dailyLimitExceeded) finalStatus = 'paused_daily_limit';
+    else if (failedCount === batch.progress.total) finalStatus = 'failed';
+    else if (failedCount > 0) finalStatus = 'completed_with_errors';
 
     await MediaBatch.findByIdAndUpdate(batchId, {
       status: finalStatus,
       'progress.sent': sentCount,
       'progress.failed': failedCount,
-      results: results
+      results
     });
 
-    console.log(`✅ Lote de mídia ${batch.name} finalizado: ${sentCount} enviados, ${failedCount} falhas`);
-    if (rateLimitHits > 0) {
-      console.log(`⚠️  Foram detectados ${rateLimitHits} hits de rate limit durante o processamento`);
-    }
+    console.log(`✅ Lote ${batch.name} finalizado: ${sentCount} enviados, ${failedCount} falhas`);
 
   } catch (error) {
-    console.error(`❌ Erro no processamento do lote de mídia ${batchId}:`, error);
+    console.error(`❌ Erro no processamento:`, error);
 
     await MediaBatch.findByIdAndUpdate(batchId, {
-      status: 'failed',
+      status: error.message.includes('LIMITE_DIARIO') ? 'paused_daily_limit' : 'failed',
       $push: {
         results: {
           contact: 'Sistema',
           phone: 'N/A',
-          mediaItem: 'Sistema',
-          group: 'Sistema',
           status: 'failed',
           error: error.message,
           timestamp: new Date()
@@ -336,53 +567,31 @@ const processMediaBatch = async (batchId) => {
       }
     });
   } finally {
-    // ✅ LIMPEZA PERIÓDICA DOS LIMITES
     rateLimitService.cleanupOldLimits();
   }
 };
 
-// ✅ CONTROLLER CREATE MEDIA BATCH COM VALIDAÇÃO DE LIMITES
-// mediaBatchController.js - ATUALIZAR createMediaBatch
+
+// ✅ CONTROLLER CREATE MEDIA BATCH COM VALIDAÇÃO DE INSTÂNCIA
+
 const createMediaBatch = async (req, res) => {
-  console.log('📦 Criando novo lote de mídia...');
-  console.log('Dados do lote:', req.body);
-
   try {
+    console.log('📦 Criando novo lote de mídia...');
     const { name, mediaItems, contactGroupIds, whatsappInstanceId, caption, options } = req.body;
-
-    // ✅ DEBUG MELHORADO
-    console.log('🔍 Dados recebidos do frontend:', {
-      captionRecebido: caption,
-      optionsRecebidas: options,
-      mediaItemsCount: mediaItems?.length
-    });
 
     if (!name || !mediaItems || !contactGroupIds || !whatsappInstanceId) {
       return res.status(400).json({
         success: false,
-        error: 'Nome, mídias, grupos de contatos e instância WhatsApp são obrigatórios'
+        error: 'Dados obrigatórios faltando'
       });
     }
 
-    const whatsappInstance = await WhatsAppInstance.findOne({
-      _id: whatsappInstanceId,
-      userId: req.user._id
-    });
+    // ✅ VALIDAR INSTÂNCIA ANTES DE CRIAR O LOTE
+    console.log(`🔍 Validando instância: ${whatsappInstanceId}`);
+    const instanceCheck = await checkWhatsAppInstance(whatsappInstanceId, req.user._id);
+    console.log(`✅ Instância validada: ${instanceCheck.sessionName}`);
 
-    if (!whatsappInstance) {
-      return res.status(404).json({
-        success: false,
-        error: 'Instância WhatsApp não encontrada'
-      });
-    }
-
-    if (whatsappInstance.status !== 'connected') {
-      return res.status(400).json({
-        success: false,
-        error: 'Instância WhatsApp não está conectada'
-      });
-    }
-
+    // ✅ VERIFICAR GRUPOS DE CONTATOS
     const contactGroups = await ContactGroup.find({
       _id: { $in: contactGroupIds },
       userId: req.user._id
@@ -391,7 +600,7 @@ const createMediaBatch = async (req, res) => {
     if (contactGroups.length !== contactGroupIds.length) {
       return res.status(400).json({
         success: false,
-        error: 'Um ou mais grupos de contatos não foram encontrados'
+        error: 'Grupos de contatos não encontrados'
       });
     }
 
@@ -401,99 +610,75 @@ const createMediaBatch = async (req, res) => {
     if (totalContacts === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Os grupos selecionados não possuem contatos'
+        error: 'Nenhum contato disponível'
       });
     }
 
-    // ✅ CORREÇÃO CRÍTICA: SALVAR CAPTION CORRETAMENTE
-    const batchOptions = {
-      ...(options || {}),
-      caption: caption || options?.caption || ''
-    };
+    // ✅ CONFIGURA CONTEXTO DO RATE LIMIT SERVICE
+    rateLimitService.setUserContext(req.user._id);
 
-    console.log('🔄 Opções finais do batch:', batchOptions);
+    // ✅ VERIFICAR LIMITE DIÁRIO ANTES DE CRIAR LOTE
+    const limitStatus = await rateLimitService.getLimitStatus(req.user._id, whatsappInstanceId);
 
-    // ✅ CRIAR BATCH COM CAPTION NO NÍVEL PRINCIPAL E NAS OPTIONS
+    if (limitStatus?.daily.remaining <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Limite diário de ${limitStatus.daily.max} mensagens excedido. Retome amanhã.`
+      });
+    }
+
+    // ✅ CRIAR LOTE DE MÍDIA
     const batch = await MediaBatch.create({
       userId: req.user._id,
       whatsappInstanceId,
       name,
       mediaItems,
       contactGroupIds,
-      caption: caption || '', // ✅ SALVAR NO NÍVEL PRINCIPAL
-      progress: {
-        total: totalSends,
-        sent: 0,
-        failed: 0
-      },
-      options: batchOptions // ✅ SALVAR NAS OPTIONS TAMBÉM
+      caption: caption || '',
+      progress: { total: totalSends, sent: 0, failed: 0 },
+      options: {
+        ...options,
+        caption: caption || options?.caption || ''
+      }
     });
 
-    console.log('✅ Batch criado no banco:', {
-      _id: batch._id,
-      caption: batch.caption, // ✅ DEVE TER VALOR AGORA
-      optionsCaption: batch.options?.caption,
-      mediaItemsCount: batch.mediaItems.length
-    });
-
-    // ✅ INICIAR PROCESSAMENTO
+    // ✅ INICIAR PROCESSAMENTO ASSÍNCRONO
     processMediaBatch(batch._id);
 
     res.status(201).json({
       success: true,
-      message: 'Lote de mídia criado e processamento iniciado',
+      message: 'Lote criado e processamento iniciado',
       batch: {
         _id: batch._id,
         name: batch.name,
         status: batch.status,
         progress: batch.progress,
         mediaCount: batch.mediaItems.length,
-        totalContacts: totalContacts,
-        totalSends: totalSends,
-        caption: batch.caption, // ✅ INCLUIR NA RESPOSTA
-        options: batch.options,
-        createdAt: batch.createdAt
+        totalContacts,
+        totalSends,
+        caption: batch.caption,
+        instance: {
+          sessionName: instanceCheck.sessionName,
+          phoneNumber: instanceCheck.phoneNumber
+        }
       },
       rateLimitInfo: {
-        maxPerMinute: 10,
-        estimatedTime: Math.ceil(totalSends / 10) + ' minutos'
+        dailyLimit: limitStatus.daily.max,
+        dailyRemaining: limitStatus.daily.remaining,
+        maxPerMinute: 1
       }
     });
 
   } catch (error) {
-    console.error('❌ Erro ao criar lote de mídia:', error);
-    res.status(400).json({
-      success: false,
-      error: error.message
-    });
-  }
-};
+    console.error('❌ Erro ao criar lote:', error);
 
-// ✅ FUNÇÕES EXISTENTES (mantidas conforme seu código)
-const uploadMedia = async (req, res) => {
-  try {
-    if (!req.files || req.files.length === 0) {
+    if (error.message.includes('Instância') || error.message.includes('conectada')) {
       return res.status(400).json({
         success: false,
-        error: 'Nenhum arquivo enviado'
+        error: `Não foi possível criar o lote: ${error.message}`
       });
     }
 
-    const mediaItems = [];
-
-    for (const file of req.files) {
-      const mediaItem = await mediaService.saveMediaFile(file, req.user._id);
-      mediaItems.push(mediaItem);
-    }
-
-    res.json({
-      success: true,
-      message: `${mediaItems.length} arquivos de mídia salvos com sucesso`,
-      mediaItems
-    });
-
-  } catch (error) {
-    console.error('❌ Erro ao fazer upload de mídia:', error);
     res.status(400).json({
       success: false,
       error: error.message
@@ -501,43 +686,47 @@ const uploadMedia = async (req, res) => {
   }
 };
 
-const checkInstanceAvailability = async (req, res) => {
+// ✅ NOVO ENDPOINT: STATUS DOS LIMITES
+// ✅ NOVO ENDPOINT: STATUS DOS LIMITES (corrigido)
+const getRateLimitStatus = async (req, res) => {
   try {
     const { instanceId } = req.params;
 
-    const instance = await WhatsAppInstance.findOne({
-      _id: instanceId,
-      userId: req.user._id
-    });
-
-    if (!instance) {
-      return res.json({
+    // ⚠️ Adiciona o userId corretamente
+    const userId = req.user?._id;
+    if (!userId) {
+      return res.status(400).json({
         success: false,
-        available: false,
-        error: 'Instância não encontrada'
+        error: 'Usuário não autenticado'
       });
     }
 
-    const socket = whatsappBaileysService.sockets.get(instance.sessionName);
-    const available = !!(socket && socket.user);
+    // ✅ Chamada correta com dois parâmetros
+    const limitStatus = await rateLimitService.getLimitStatus(userId, instanceId);
 
     res.json({
       success: true,
-      available,
-      status: instance.status,
-      sessionName: instance.sessionName,
-      phoneNumber: instance.phoneNumber
+      data: limitStatus || {
+        daily: {
+          current: 0,
+          max: 150,
+          remaining: 150,
+          resetTime: new Date(Date.now() + 24 * 60 * 60 * 1000)
+        },
+        minute: {
+          media: 0,
+          message: 0
+        }
+      }
     });
-
   } catch (error) {
-    console.error('❌ Erro ao verificar instância:', error);
-    res.status(400).json({
-      success: false,
-      error: error.message
-    });
+    console.error('❌ Erro em getRateLimitStatus:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
+
+// ✅ FUNÇÕES EXISTENTES (MANTIDAS)
 const getMediaBatches = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -563,20 +752,12 @@ const getMediaBatches = async (req, res) => {
         mediaCount: batch.mediaItems.length,
         whatsappInstance: batch.whatsappInstanceId,
         contactGroups: batch.contactGroupIds,
-        totalSends: batch.progress.total,
-        sent: batch.progress.sent,
-        failed: batch.progress.failed,
         createdAt: batch.createdAt
       })),
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      }
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) }
     });
   } catch (error) {
-    console.error('❌ Erro ao buscar lotes de mídia:', error);
+    console.error('❌ Erro ao buscar lotes:', error);
     res.status(400).json({
       success: false,
       error: error.message
@@ -596,7 +777,7 @@ const getMediaBatch = async (req, res) => {
     if (!batch) {
       return res.status(404).json({
         success: false,
-        error: 'Lote de mídia não encontrado'
+        error: 'Lote não encontrado'
       });
     }
 
@@ -616,7 +797,7 @@ const getMediaBatch = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('❌ Erro ao buscar lote de mídia:', error);
+    console.error('❌ Erro ao buscar lote:', error);
     res.status(400).json({
       success: false,
       error: error.message
@@ -638,9 +819,8 @@ const cancelMediaBatch = async (req, res) => {
           results: {
             contact: 'Sistema',
             phone: 'N/A',
-            mediaItem: 'Sistema',
             status: 'cancelled',
-            error: 'Lote cancelado pelo usuário',
+            error: 'Cancelado pelo usuário',
             timestamp: new Date()
           }
         }
@@ -657,7 +837,7 @@ const cancelMediaBatch = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Lote de mídia cancelado com sucesso',
+      message: 'Lote cancelado',
       batch: {
         _id: batch._id,
         name: batch.name,
@@ -665,7 +845,7 @@ const cancelMediaBatch = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('❌ Erro ao cancelar lote de mídia:', error);
+    console.error('❌ Erro ao cancelar:', error);
     res.status(400).json({
       success: false,
       error: error.message
@@ -673,7 +853,6 @@ const cancelMediaBatch = async (req, res) => {
   }
 };
 
-// ✅ NOVA FUNÇÃO: Excluir lote de mídia
 const deleteMediaBatch = async (req, res) => {
   try {
     const batch = await MediaBatch.findOneAndDelete({
@@ -684,32 +863,20 @@ const deleteMediaBatch = async (req, res) => {
     if (!batch) {
       return res.status(404).json({
         success: false,
-        error: 'Lote de mídia não encontrado'
+        error: 'Lote não encontrado'
       });
-    }
-
-    // ✅ OPCIONAL: Limpar arquivos de mídia associados
-    try {
-      for (const mediaItem of batch.mediaItems) {
-        // await mediaService.deleteMediaFile(mediaItem.url, req.user._id);
-        console.log(`🗑️ Arquivo de mídia não removido: ${mediaItem.url}`);
-      }
-    } catch (cleanupError) {
-      console.warn('⚠️ Aviso: Erro ao limpar arquivos de mídia:', cleanupError.message);
-      // Não falhar a operação principal se a limpeza der erro
     }
 
     res.json({
       success: true,
-      message: 'Lote de mídia excluído com sucesso',
+      message: 'Lote excluído',
       deletedBatch: {
         _id: batch._id,
         name: batch.name
       }
     });
-
   } catch (error) {
-    console.error('❌ Erro ao excluir lote de mídia:', error);
+    console.error('❌ Erro ao excluir:', error);
     res.status(400).json({
       success: false,
       error: error.message
@@ -721,11 +888,12 @@ const deleteMediaBatch = async (req, res) => {
 module.exports = {
   createMediaBatch,
   uploadMedia,
-  checkInstanceAvailability,
   getMediaBatches,
   getMediaBatch,
   cancelMediaBatch,
-  processMediaBatch,
-  rateLimitService, // Exportar para uso em outros controllers
   deleteMediaBatch,
+  getRateLimitStatus,
+  processMediaBatch,
+  rateLimitService,
+  checkWhatsAppInstance // ✅ Exportar para uso em outros lugares
 };

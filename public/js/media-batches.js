@@ -5,7 +5,8 @@ class MediaBatchesManager {
         this.currentModal = null;
         this.currentPage = 1;
         this.totalPages = 1;
-        this.pollingInterval = null; // Controle do polling
+        this.pollingInterval = null;
+        this.activeBatches = new Set(); // Para controlar batches ativos
         console.log('✅ MediaBatchesManager inicializado');
     }
 
@@ -38,7 +39,6 @@ class MediaBatchesManager {
 
         // Configurar limpeza ao fechar página
         window.addEventListener('beforeunload', () => this.destroy());
-
     }
 
     setupBatchEvents() {
@@ -96,36 +96,395 @@ class MediaBatchesManager {
         }
     }
 
+    renderPagination() {
+        const container = document.getElementById('mediaBatchesList');
+        if (!container || this.totalPages <= 1) return;
+
+        let paginationHTML = '<div class="pagination">';
+
+        // Botão anterior
+        if (this.currentPage > 1) {
+            paginationHTML += `<button class="page-btn btn btn-secondary" data-page="${this.currentPage - 1}">
+                <i class="fas fa-chevron-left"></i> Anterior
+            </button>`;
+        }
+
+        // Páginas
+        for (let i = 1; i <= this.totalPages; i++) {
+            if (i === 1 || i === this.totalPages || (i >= this.currentPage - 2 && i <= this.currentPage + 2)) {
+                paginationHTML += `<button class="page-btn btn ${i === this.currentPage ? 'btn-primary' : 'btn-secondary'}" data-page="${i}">${i}</button>`;
+            } else if (i === this.currentPage - 3 || i === this.currentPage + 3) {
+                paginationHTML += '<span class="pagination-ellipsis">...</span>';
+            }
+        }
+
+        // Botão próximo
+        if (this.currentPage < this.totalPages) {
+            paginationHTML += `<button class="page-btn btn btn-secondary" data-page="${this.currentPage + 1}">
+                Próximo <i class="fas fa-chevron-right"></i>
+            </button>`;
+        }
+
+        paginationHTML += '</div>';
+        container.insertAdjacentHTML('beforeend', paginationHTML);
+    }
+
+    async loadMediaBatches(page = 1) {
+        try {
+            const container = document.getElementById('mediaBatchesList');
+            if (!container) return;
+
+            container.innerHTML = '<div class="loading-text">Carregando lotes de mídia...</div>';
+            const response = await this.safeApiRequest('GET', `/api/media/batches?page=${page}&limit=10`);
+
+            if (response.success && response.batches && response.batches.length > 0) {
+                this.currentPage = page;
+                this.totalPages = response.pagination?.pages || 1;
+
+                // Atualizar batches ativos
+                this.updateActiveBatches(response.batches);
+
+                container.innerHTML = this.renderMediaBatchesList(response.batches);
+                this.renderPagination();
+
+                console.log(`✅ ${response.batches.length} lotes carregados`);
+            } else {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-images"></i>
+                        <p>Nenhum lote de mídia encontrado</p>
+                        <button class="btn btn-primary" id="createFirstBatchBtn">
+                            <i class="fas fa-plus"></i> Criar Primeiro Lote
+                        </button>
+                    </div>
+                `;
+
+                document.getElementById('createFirstBatchBtn')?.addEventListener('click', () => {
+                    this.showMediaBatchModal();
+                });
+            }
+        } catch (error) {
+            console.error('Erro ao carregar lotes de mídia:', error);
+            const container = document.getElementById('mediaBatchesList');
+            if (container) {
+                container.innerHTML = `
+                    <div class="error-state">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p>Erro ao carregar lotes de mídia</p>
+                        <button class="btn btn-secondary" onclick="app.mediaBatchesManager.loadMediaBatches()">
+                            <i class="fas fa-redo"></i> Tentar Novamente
+                        </button>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    // ✅ NOVO: Atualizar batches ativos para polling eficiente
+    updateActiveBatches(batches) {
+        this.activeBatches.clear();
+        batches.forEach(batch => {
+            if (this.isBatchActive(batch.status)) {
+                this.activeBatches.add(batch._id);
+            }
+        });
+        console.log(`📊 Batches ativos: ${this.activeBatches.size}`);
+    }
+
+    // ✅ NOVO: Verificar se batch precisa de atualização
+    isBatchActive(status) {
+        return ['pending', 'processing'].includes(status);
+    }
+
+    renderMediaBatchesList(batches) {
+        return `
+            <div class="batches-grid">
+                ${batches.map(batch => `
+                    <div class="batch-card" data-batch-id="${batch._id}" data-batch-status="${batch.status}">
+                        <div class="batch-header">
+                            <h4>${this.escapeHtml(batch.name)}</h4>
+                            <span class="batch-status ${batch.status}">
+                                ${this.getStatusText(batch.status)}
+                                ${batch.status === 'processing' ? '<i class="fas fa-sync fa-spin"></i>' : ''}
+                            </span>
+                        </div>
+                        
+                        <div class="batch-info">
+                            <div class="info-item">
+                                <i class="fas fa-images"></i>
+                                <span>${batch.mediaCount || 0} mídia(s)</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="fas fa-users"></i>
+                                <span>${batch.contactGroups ? batch.contactGroups.length : 0} grupo(s)</span>
+                            </div>
+                            <div class="info-item">
+                                <i class="fas fa-paper-plane"></i>
+                                <span class="sent-count">${batch.progress?.sent || 0}/${batch.progress?.total || 0} enviados</span>
+                            </div>
+                            ${batch.failed > 0 ? `
+                                <div class="info-item">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <span class="failed-count">${batch.progress?.failed || 0} falhas</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="batch-progress">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${this.calculateProgress(batch)}%"></div>
+                            </div>
+                            <span class="progress-text">${this.calculateProgress(batch)}%</span>
+                        </div>
+                        
+                        <div class="batch-meta">
+                            <small>Criado em: ${new Date(batch.createdAt).toLocaleString('pt-BR')}</small>
+                            ${batch.whatsappInstance ? `
+                                <small>Instância: ${batch.whatsappInstance.sessionName}</small>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="batch-actions">
+                            ${batch.status === 'processing' ? `
+                                <button class="btn btn-warning btn-sm batch-action-btn" data-action="cancel" title="Cancelar envio">
+                                    <i class="fas fa-stop"></i> Cancelar
+                                </button>
+                            ` : ''}
+                            
+                            ${batch.status === 'completed' || batch.status === 'completed_with_errors' ? `
+                                <button class="btn btn-success btn-sm batch-action-btn" data-action="reuse" title="Reutilizar este lote">
+                                    <i class="fas fa-recycle"></i> Reutilizar
+                                </button>
+                            ` : ''}
+                            
+                            <button class="btn btn-info btn-sm batch-action-btn" data-action="view" title="Ver detalhes">
+                                <i class="fas fa-eye"></i> Detalhes
+                            </button>
+                            
+                            ${batch.status !== 'processing' ? `
+                                <button class="btn btn-danger btn-sm batch-action-btn" data-action="delete" title="Excluir lote">
+                                    <i class="fas fa-trash"></i> Excluir
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    calculateProgress(batch) {
+        if (!batch.progress || !batch.progress.total || batch.progress.total === 0) {
+            return 0;
+        }
+
+        const progress = (batch.progress.sent / batch.progress.total) * 100;
+        return Math.min(100, Math.max(0, Math.round(progress)));
+    }
+
+    getStatusText(status) {
+        const statusMap = {
+            'pending': 'Pendente',
+            'processing': 'Processando',
+            'completed': 'Concluído',
+            'completed_with_errors': 'Concluído com erros',
+            'failed': 'Falhou',
+            'cancelled': 'Cancelado',
+            'paused_daily_limit': 'Pausado - Limite Diário'
+        };
+        return statusMap[status] || status;
+    }
+
+    // ✅ CORREÇÃO: Método de polling funcionando
+    startProgressPolling() {
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+        }
+
+        this.pollingInterval = setInterval(() => {
+            this.updateBatchesProgress();
+        }, 3000); // Atualiza a cada 3 segundos (mais rápido para testes)
+    }
+
+    // ✅ CORREÇÃO: Método descomentado e melhorado
+    async updateBatchesProgress() {
+        try {
+            // Só atualiza se houver batches ativos
+            if (this.activeBatches.size === 0) {
+                return;
+            }
+
+            const response = await this.safeApiRequest('GET', `/api/media/batches?page=${this.currentPage}&limit=10`);
+
+            if (response.success && response.batches?.length > 0) {
+                this.updateActiveBatches(response.batches);
+                this.updateBatchCardsProgress(response.batches);
+            }
+        } catch (error) {
+            console.warn('⚠️ Erro ao atualizar progresso:', error);
+        }
+    }
+
+    // ✅ MELHORIA: Atualização mais eficiente dos cards
     updateBatchCardsProgress(batches) {
+        let hasChanges = false;
+
         batches.forEach(batch => {
             const card = document.querySelector(`.batch-card[data-batch-id="${batch._id}"]`);
             if (!card) return;
 
-            const progressFill = card.querySelector('.progress-fill');
-            const progressText = card.querySelector('.batch-progress span');
-            const sentCount = card.querySelector('.info-item:nth-child(3) span');
-            const progressPercent = this.calculateProgress(batch);
+            const currentStatus = card.dataset.batchStatus;
+            const newStatus = batch.status;
 
-            // Atualizar barra de progresso
-            if (progressFill) {
-                progressFill.style.width = `${progressPercent}%`;
-            }
-            if (progressText) {
-                progressText.textContent = `${progressPercent}%`;
+            // Verificar se houve mudança de status
+            if (currentStatus !== newStatus) {
+                card.dataset.batchStatus = newStatus;
+                hasChanges = true;
             }
 
-            // Atualizar contador de envios
-            if (sentCount) {
-                sentCount.textContent = `${batch.sent || 0}/${batch.totalSends || 0} enviados`;
-            }
+            // Atualizar elementos do card
+            this.updateBatchCardElements(card, batch);
+        });
 
-            // Atualizar status se necessário
-            const statusSpan = card.querySelector('.batch-status');
-            if (statusSpan) {
-                statusSpan.className = `batch-status ${batch.status}`;
-                statusSpan.textContent = this.getStatusText(batch.status);
+        // Se houve mudanças significativas, recarregar a lista
+        if (hasChanges) {
+            console.log('🔄 Mudanças detectadas, recarregando lista...');
+            setTimeout(() => this.loadMediaBatches(this.currentPage), 1000);
+        }
+    }
+
+    // ✅ NOVO: Atualizar elementos específicos do card
+    updateBatchCardElements(card, batch) {
+        // Atualizar status
+        const statusSpan = card.querySelector('.batch-status');
+        if (statusSpan) {
+            statusSpan.className = `batch-status ${batch.status}`;
+            statusSpan.innerHTML = `${this.getStatusText(batch.status)} ${batch.status === 'processing' ? '<i class="fas fa-sync fa-spin"></i>' : ''
+                }`;
+        }
+
+        // Atualizar contadores
+        const sentCount = card.querySelector('.sent-count');
+        if (sentCount) {
+            sentCount.textContent = `${batch.progress?.sent || 0}/${batch.progress?.total || 0} enviados`;
+        }
+
+        const failedCount = card.querySelector('.failed-count');
+        if (failedCount && batch.progress?.failed > 0) {
+            failedCount.textContent = `${batch.progress.failed} falhas`;
+        }
+
+        // Atualizar barra de progresso
+        const progressFill = card.querySelector('.progress-fill');
+        const progressText = card.querySelector('.progress-text');
+        const progressPercent = this.calculateProgress(batch);
+
+        if (progressFill) {
+            progressFill.style.width = `${progressPercent}%`;
+            progressFill.className = `progress-fill ${this.getProgressColorClass(progressPercent)}`;
+        }
+
+        if (progressText) {
+            progressText.textContent = `${progressPercent}%`;
+        }
+
+        // Atualizar ações disponíveis
+        this.updateBatchActions(card, batch);
+    }
+
+    // ✅ NOVO: Classe de cor baseada no progresso
+    getProgressColorClass(progress) {
+        if (progress >= 90) return 'progress-high';
+        if (progress >= 50) return 'progress-medium';
+        return 'progress-low';
+    }
+
+    // ✅ NOVO: Atualizar botões de ação dinamicamente
+    updateBatchActions(card, batch) {
+        const actionsContainer = card.querySelector('.batch-actions');
+        if (!actionsContainer) return;
+
+        // Remover botão de cancelar se não estiver mais processando
+        if (batch.status !== 'processing') {
+            const cancelBtn = actionsContainer.querySelector('[data-action="cancel"]');
+            if (cancelBtn) cancelBtn.remove();
+        }
+
+        // Adicionar botão de reutilizar se concluído
+        if ((batch.status === 'completed' || batch.status === 'completed_with_errors') &&
+            !actionsContainer.querySelector('[data-action="reuse"]')) {
+
+            const reuseBtn = document.createElement('button');
+            reuseBtn.className = 'btn btn-success btn-sm batch-action-btn';
+            reuseBtn.setAttribute('data-action', 'reuse');
+            reuseBtn.setAttribute('title', 'Reutilizar este lote');
+            reuseBtn.innerHTML = '<i class="fas fa-recycle"></i> Reutilizar';
+
+            // Inserir antes do botão de detalhes
+            const viewBtn = actionsContainer.querySelector('[data-action="view"]');
+            if (viewBtn) {
+                actionsContainer.insertBefore(reuseBtn, viewBtn);
+            }
+        }
+    }
+
+    setupPaginationEvents() {
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('page-btn')) {
+                e.preventDefault();
+                const page = parseInt(e.target.dataset.page);
+                if (page && page !== this.currentPage) {
+                    this.loadMediaBatches(page);
+                }
             }
         });
+    }
+
+    renderPagination() {
+        const container = document.getElementById('mediaBatchesList');
+        if (!container || this.totalPages <= 1) return;
+
+        let paginationHTML = '<div class="pagination">';
+
+        // Botão anterior
+        if (this.currentPage > 1) {
+            paginationHTML += `
+                <button class="page-btn btn btn-secondary" data-page="${this.currentPage - 1}">
+                    <i class="fas fa-chevron-left"></i> Anterior
+                </button>
+            `;
+        }
+
+        // Páginas
+        for (let i = 1; i <= this.totalPages; i++) {
+            if (i === 1 || i === this.totalPages || (i >= this.currentPage - 2 && i <= this.currentPage + 2)) {
+                paginationHTML += `
+                    <button class="page-btn btn ${i === this.currentPage ? 'btn-primary' : 'btn-secondary'}" 
+                            data-page="${i}">${i}</button>
+                `;
+            } else if (i === this.currentPage - 3 || i === this.currentPage + 3) {
+                paginationHTML += '<span class="pagination-ellipsis">...</span>';
+            }
+        }
+
+        // Botão próximo
+        if (this.currentPage < this.totalPages) {
+            paginationHTML += `
+                <button class="page-btn btn btn-secondary" data-page="${this.currentPage + 1}">
+                    Próximo <i class="fas fa-chevron-right"></i>
+                </button>
+            `;
+        }
+
+        paginationHTML += '</div>';
+        container.insertAdjacentHTML('beforeend', paginationHTML);
+    }
+
+    // ✅ NOVO: Utilitário para escape HTML
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     destroy() {
@@ -137,14 +496,9 @@ class MediaBatchesManager {
 
 
 
-    setupPaginationEvents() {
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('page-btn')) {
-                const page = parseInt(e.target.dataset.page);
-                this.loadMediaBatches(page);
-            }
-        });
-    }
+
+
+
 
     // Método seguro para chamadas API
     async safeApiRequest(method, endpoint, data = null, isFormData = false) {
@@ -1154,6 +1508,10 @@ class MediaBatchesManager {
             const caption = document.getElementById('mediaBatchCaption').value.trim();
             console.log('📝 Legenda capturada:', caption);
 
+            // ✅ CAPTURAR INSTÂNCIA ID PARA VALIDAÇÃO
+            const whatsappInstanceId = instanceSelect.value;
+            console.log(`🔍 Instância selecionada: ${whatsappInstanceId}`);
+
             let mediaItems = [];
 
             // Se estiver reutilizando um batch, usar as mídias existentes
@@ -1162,23 +1520,50 @@ class MediaBatchesManager {
                 console.log(`✅ Reutilizando ${mediaItems.length} mídias existentes do lote original`);
             }
 
-            // Fazer upload de novos arquivos se houver
+            // ✅ FAZER UPLOAD DE NOVOS ARQUIVOS COM VALIDAÇÃO DE INSTÂNCIA
             if (this.uploadedFiles.length > 0) {
-                console.log('📤 Iniciando upload de novos arquivos...');
+                console.log('📤 Iniciando upload de novos arquivos com validação de instância...');
 
                 for (const file of this.uploadedFiles) {
                     const formData = new FormData();
                     formData.append('mediaFiles', file);
+                    formData.append('whatsappInstanceId', whatsappInstanceId); // ✅ ENVIAR INSTÂNCIA PARA VALIDAÇÃO
+
+                    console.log(`📎 Enviando arquivo: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
                     const uploadResponse = await this.safeApiRequest('POST', '/api/media/upload', formData, true);
 
                     if (uploadResponse.success && uploadResponse.mediaItems) {
                         mediaItems.push(...uploadResponse.mediaItems);
                         console.log(`✅ Upload de ${file.name} concluído. Total de mídias: ${mediaItems.length}`);
+
+                        // ✅ MOSTRAR PROGRESSO DO UPLOAD
+                        this.safeShowNotification(`✅ ${file.name} salvo com sucesso`, 'success', 2000);
                     } else {
+                        // fechar o  modal
+                        this.safeCloseModal('mediaBatchModal');
                         console.error(`❌ Falha no upload de ${file.name}:`, uploadResponse);
-                        this.safeShowNotification(`❌ Falha no upload do arquivo: ${file.name}`, 'error');
+
+                        // ✅ TRATAMENTO ESPECÍFICO PARA ERROS DE INSTÂNCIA
+                        if (uploadResponse.error && uploadResponse.error.includes('Instância')) {
+                            this.safeShowNotification(`❌ ${uploadResponse.error}`, 'error');
+                        } else {
+                            this.safeShowNotification(`❌ Falha no upload do arquivo: ${file.name}`, 'error');
+                        }
+
+                        // ❌ PARAR SE HOUVER ERRO DE INSTÂNCIA
+                        if (uploadResponse.error && uploadResponse.error.includes('Instância')) {
+                            this.safeShowLoading(false);
+                            return;
+                        }
                     }
+                }
+
+                // ✅ VERIFICAR SE ALGUM ARQUIVO FOI SALVO COM SUCESSO
+                if (mediaItems.length === 0 && !existingBatchData) {
+                    this.safeShowNotification('❌ Nenhum arquivo foi salvo com sucesso', 'error');
+                    this.safeShowLoading(false);
+                    return;
                 }
             }
 
@@ -1193,7 +1578,7 @@ class MediaBatchesManager {
                 name: batchName,
                 mediaItems: mediaItems,
                 contactGroupIds: selectedGroups.map(cb => cb.value),
-                whatsappInstanceId: instanceSelect.value,
+                whatsappInstanceId: whatsappInstanceId,
                 caption: caption, // CORREÇÃO: Usar a legenda capturada
                 options: {
                     delayBetweenMessages: parseInt(document.getElementById('mediaDelay').value) || 3000,
@@ -1211,158 +1596,100 @@ class MediaBatchesManager {
                 mediaItems: `Array com ${batchData.mediaItems.length} itens`,
                 contactGroupIds: batchData.contactGroupIds.length,
                 caption: batchData.caption ? `"${batchData.caption}"` : 'Nenhuma',
-                originalBatchId: batchData.originalBatchId || 'Nenhum'
+                originalBatchId: batchData.originalBatchId || 'Nenhum',
+                instanceId: batchData.whatsappInstanceId
             });
 
+            // ✅ VERIFICAR LIMITE DIÁRIO ANTES DE CRIAR O LOTE
+            console.log('🔍 Verificando limites diários...');
+            try {
+                const limitResponse = await this.safeApiRequest('GET', `/api/media/rate-limit/${whatsappInstanceId}`);
+                if (limitResponse.success && limitResponse.data) {
+                    const { daily } = limitResponse.data;
+                    console.log(`📊 Status de limites: ${daily.current}/${daily.max} mensagens hoje`);
+
+                    if (daily.remaining <= 0) {
+                        this.safeShowNotification(`❌ Limite diário de ${daily.max} mensagens excedido. Retome amanhã.`, 'error');
+                        this.safeShowLoading(false);
+                        return;
+                    }
+
+                    // ✅ AVISAR SE ESTÁ PRÓXIMO DO LIMITE
+                    const totalSends = batchData.contactGroupIds.length * batchData.mediaItems.length;
+                    if (daily.remaining < totalSends) {
+                        this.safeShowNotification(`⚠️ Atenção: Você tem ${daily.remaining} mensagens restantes hoje (precisa de ${totalSends})`, 'warning');
+                    }
+                }
+            } catch (limitError) {
+                console.warn('⚠️ Não foi possível verificar limites:', limitError);
+                // Continua mesmo sem verificação de limites
+            }
+
+            // ✅ CRIAR O LOTE
             const response = await this.safeApiRequest('POST', '/api/media/batches', batchData);
 
             if (response.success) {
                 const message = existingBatchData ?
                     `✅ Lote reutilizado com sucesso! ${mediaItems.length} mídias incluídas.` :
                     `✅ Lote de mídia criado com sucesso! ${mediaItems.length} mídias incluídas.`;
-                this.safeShowNotification(message, 'success');
+
+                // ✅ INCLUIR INFORMAÇÕES DE LIMITE NA MENSAGEM DE SUCESSO
+                let successMessage = message;
+                if (response.rateLimitInfo) {
+                    successMessage += ` Limite diário: ${response.rateLimitInfo.dailyRemaining}/${response.rateLimitInfo.dailyLimit} restantes.`;
+                }
+
+                this.safeShowNotification(successMessage, 'success');
                 this.safeCloseModal('mediaBatchModal');
                 this.loadMediaBatches();
                 this.uploadedFiles = [];
                 this.preservedBatchData = null;
+
+                // ✅ MOSTRAR DETALHES DO LOTE CRIADO
+                console.log('🎉 Lote criado com sucesso:', {
+                    batchId: response.batch._id,
+                    instance: response.batch.instance?.sessionName || 'N/A',
+                    totalSends: response.batch.totalSends,
+                    status: response.batch.status
+                });
+
             } else {
-                throw new Error(response.error || 'Erro desconhecido ao criar lote');
+                console.log('❌ Falha ao criar lote:', response);
+
+                // ✅ TRATAMENTO ESPECÍFICO PARA ERROS DE INSTÂNCIA
+                if (response.error && response.error.includes('Instância')) {
+                    throw new Error(`Problema na instância WhatsApp: ${response.error}`);
+                } else if (response.error && response.error.includes('Limite diário')) {
+                    throw new Error(response.error);
+                } else {
+                    throw new Error(response.error || 'Erro desconhecido ao criar lote');
+                }
             }
         } catch (error) {
             console.error('Erro ao criar lote de mídia:', error);
-            this.safeShowNotification(`❌ Erro: ${error.message}`, 'error');
+
+            // ✅ MENSAGENS DE ERRO MAIS ESPECÍFICAS
+            let errorMessage = error.message;
+            if (error.message.includes('Instância')) {
+                errorMessage = `❌ ${error.message}`;
+            } else if (error.message.includes('Limite diário')) {
+                errorMessage = `🚫 ${error.message}`;
+            } else {
+                errorMessage = `❌ Erro: ${error.message}`;
+            }
+
+            this.safeShowNotification(errorMessage, 'error');
         } finally {
             this.safeShowLoading(false);
         }
     }
 
 
-    async loadMediaBatches(page = 1) {
-        try {
-            const container = document.getElementById('mediaBatchesList');
-            if (!container) return;
 
-            container.innerHTML = '<div class="loading-text">Carregando lotes de mídia...</div>';
-            const response = await this.safeApiRequest('GET', `/api/media/batches?page=${page}&limit=10`);
 
-            if (response.success && response.batches && response.batches.length > 0) {
-                this.currentPage = page;
-                this.totalPages = response.pagination?.pages || 1;
-                container.innerHTML = this.renderMediaBatchesList(response.batches);
-                this.renderPagination();
-            } else {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-images"></i>
-                        <p>Nenhum lote de mídia encontrado</p>
-                        <button class="btn btn-primary" id="createFirstBatchBtn">
-                            <i class="fas fa-plus"></i> Criar Primeiro Lote
-                        </button>
-                    </div>
-                `;
 
-                // Adicionar evento ao botão de criar primeiro lote
-                document.getElementById('createFirstBatchBtn')?.addEventListener('click', () => {
-                    this.showMediaBatchModal();
-                });
-            }
-        } catch (error) {
-            console.error('Erro ao carregar lotes de mídia:', error);
-            const container = document.getElementById('mediaBatchesList');
-            if (container) {
-                container.innerHTML = `
-                    <div class="error-state">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        <p>Erro ao carregar lotes de mídia</p>
-                    </div>
-                `;
-            }
-        }
-    }
 
-    renderPagination() {
-        const container = document.getElementById('mediaBatchesList');
-        if (!container || this.totalPages <= 1) return;
 
-        let paginationHTML = '<div class="pagination">';
-
-        // Botão anterior
-        if (this.currentPage > 1) {
-            paginationHTML += `<button class="page-btn btn btn-secondary" data-page="${this.currentPage - 1}">
-                <i class="fas fa-chevron-left"></i> Anterior
-            </button>`;
-        }
-
-        // Páginas
-        for (let i = 1; i <= this.totalPages; i++) {
-            if (i === 1 || i === this.totalPages || (i >= this.currentPage - 2 && i <= this.currentPage + 2)) {
-                paginationHTML += `<button class="page-btn btn ${i === this.currentPage ? 'btn-primary' : 'btn-secondary'}" data-page="${i}">${i}</button>`;
-            } else if (i === this.currentPage - 3 || i === this.currentPage + 3) {
-                paginationHTML += '<span class="pagination-ellipsis">...</span>';
-            }
-        }
-
-        // Botão próximo
-        if (this.currentPage < this.totalPages) {
-            paginationHTML += `<button class="page-btn btn btn-secondary" data-page="${this.currentPage + 1}">
-                Próximo <i class="fas fa-chevron-right"></i>
-            </button>`;
-        }
-
-        paginationHTML += '</div>';
-        container.insertAdjacentHTML('beforeend', paginationHTML);
-    }
-
-    renderMediaBatchesList(batches) {
-        return `
-            <div class="batches-grid">
-                ${batches.map(batch => `
-                    <div class="batch-card" data-batch-id="${batch._id}">
-                        <div class="batch-header">
-                            <h4>${batch.name}</h4>
-                            <span class="batch-status ${batch.status}">${this.getStatusText(batch.status)}</span>
-                        </div>
-                        <div class="batch-info">
-                            <div class="info-item">
-                                <i class="fas fa-images"></i>
-                                <span>${batch.mediaCount || 0} mídia(s)</span>
-                            </div>
-                            <div class="info-item">
-                                <i class="fas fa-users"></i>
-                                <span>${batch.contactGroups ? batch.contactGroups.length : 0} grupo(s)</span>
-                            </div>
-                            <div class="info-item">
-                                <i class="fas fa-paper-plane"></i>
-                                <span>${batch.sent || 0}/${batch.totalSends || 0} enviados</span>
-                            </div>
-                        </div>
-                        <div class="batch-progress">
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${this.calculateProgress(batch)}%"></div>
-                            </div>
-                            <span>${this.calculateProgress(batch)}%</span>
-                        </div>
-                        <div class="batch-actions">
-                            ${batch.status === 'processing' ? `
-                                <button class="btn btn-warning btn-sm batch-action-btn" data-action="cancel">
-                                    <i class="fas fa-stop"></i> Cancelar
-                                </button>
-                            ` : ''}
-                            <button class="btn btn-success btn-sm batch-action-btn" data-action="reuse">
-                                <i class="fas fa-recycle"></i> Reutilizar
-                            </button>
-                            <button class="btn btn-info btn-sm batch-action-btn" data-action="view">
-                                <i class="fas fa-eye"></i> Detalhes
-                            </button>
-                            <button class="btn btn-danger btn-sm batch-action-btn" data-action="delete">
-                                <i class="fas fa-trash"></i> Excluir
-                            </button>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    }
 
     getStatusText(status) {
         const statusMap = {
@@ -1375,17 +1702,7 @@ class MediaBatchesManager {
         return statusMap[status] || status;
     }
 
-    calculateProgress(batch) {
-        if (batch.progress?.progress != null) {
-            return Math.round(batch.progress.progress);
-        }
 
-        const total = batch.totalSends || 0;
-        const sent = batch.sent || 0;
-
-        if (total === 0) return 0;
-        return Math.min(Math.round((sent / total) * 100), 100);
-    }
 
     async cancelBatch(batchId) {
         try {
@@ -1478,116 +1795,305 @@ class MediaBatchesManager {
 
     async viewBatchDetails(batchId) {
         try {
+            console.log(`🔍 Buscando detalhes do batch: ${batchId}`);
+
             const response = await this.safeApiRequest('GET', `/api/media/batches/${batchId}`);
 
-            if (response.success) {
+            if (response.success && response.batch) {
+                console.log('✅ Detalhes do batch carregados:', response.batch);
                 this.showBatchDetailsModal(response.batch);
             } else {
-                throw new Error(response.error);
+                throw new Error(response.error || 'Não foi possível carregar os detalhes do lote');
             }
         } catch (error) {
-            console.error('Erro ao carregar detalhes:', error);
+            console.error('❌ Erro ao carregar detalhes do batch:', error);
             this.safeShowNotification(`❌ Erro: ${error.message}`, 'error');
         }
     }
 
     showBatchDetailsModal(batch) {
-        // ✅ CORREÇÃO: Usar dados corretos do batch
+        console.log('📋 Mostrando modal de detalhes:', batch);
+
+        // ✅ CORREÇÃO: Usar estrutura correta dos dados do batch
         const mediaCount = batch.mediaItems ? batch.mediaItems.length : 0;
         const groupCount = batch.contactGroups ? batch.contactGroups.length : 0;
-        const sentCount = batch.sent || 0;
-        const totalSends = batch.totalSends || 0;
+
+        // ✅ CORREÇÃO CRÍTICA: Usar progress.sent e progress.total em vez de sent e totalSends
+        const sentCount = batch.progress?.sent || 0;
+        const totalSends = batch.progress?.total || 0;
+        const failedCount = batch.progress?.failed || 0;
+
         const progress = this.calculateProgress(batch);
+        const successRate = totalSends > 0 ? Math.round(((sentCount - failedCount) / totalSends) * 100) : 0;
 
         const modalHTML = `
-        <div id="batchDetailsModal" class="modal" style="display: block;">
-            <div class="modal-content" style="max-width: 900px;">
-                <span class="close" id="closeBatchDetailsModal">&times;</span>
-                <h3>Detalhes do Lote: ${batch.name}</h3>
-                <div class="batch-details">
-                    <div class="detail-section">
-                        <h4>Informações Gerais</h4>
-                        <div class="detail-grid">
-                            <div class="detail-item">
-                                <strong>Status:</strong>
-                                <span class="status ${batch.status}">${this.getStatusText(batch.status)}</span>
-                            </div>
-                            <div class="detail-item">
-                                <strong>Progresso:</strong>
-                                <span>${sentCount} / ${totalSends} (${progress}%)</span>
-                            </div>
-                            <div class="detail-item">
-                                <strong>Mídias:</strong>
-                                <span>${mediaCount} arquivo(s)</span>
-                            </div>
-                            <div class="detail-item">
-                                <strong>Grupos:</strong>
-                                <span>${groupCount} grupo(s)</span>
-                            </div>
-                            <div class="detail-item">
-                                <strong>Legenda:</strong>
-                                <span>${batch.caption || 'Nenhuma'}</span>
-                            </div>
-                            <div class="detail-item">
-                                <strong>Criado em:</strong>
-                                <span>${new Date(batch.createdAt).toLocaleString()}</span>
+    <div id="batchDetailsModal" class="modal" style="display: block;">
+        <div class="modal-content" style="max-width: 900px;">
+            <span class="close" id="closeBatchDetailsModal">&times;</span>
+            <h3><i class="fas fa-info-circle"></i> Detalhes do Lote: ${this.escapeHtml(batch.name)}</h3>
+            
+            <div class="batch-details">
+                <!-- Seção: Informações Gerais -->
+                <div class="detail-section">
+                    <h4><i class="fas fa-chart-bar"></i> Informações Gerais</h4>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <strong><i class="fas fa-tag"></i> Status:</strong>
+                            <span class="status ${batch.status}">${this.getStatusText(batch.status)}</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong><i class="fas fa-progress"></i> Progresso:</strong>
+                            <div class="progress-display">
+                                <span>${sentCount} / ${totalSends} enviados</span>
+                                <div class="mini-progress-bar">
+                                    <div class="mini-progress-fill" style="width: ${progress}%"></div>
+                                </div>
+                                <span class="progress-percent">${progress}%</span>
                             </div>
                         </div>
-                    </div>
-                    
-                    ${batch.caption ? `
-                    <div class="detail-section">
-                        <h4>Legenda Completa</h4>
-                        <div class="caption-display">${batch.caption}</div>
-                    </div>
-                    ` : ''}
-                    
-                    ${batch.mediaItems && batch.mediaItems.length > 0 ? `
-                    <div class="detail-section">
-                        <h4>Mídias (${batch.mediaItems.length})</h4>
-                        <div class="media-preview-grid large">
-                            ${batch.mediaItems.map((media, index) => this.renderMediaPreview(media, index)).join('')}
+                        <div class="detail-item">
+                            <strong><i class="fas fa-chart-pie"></i> Estatísticas:</strong>
+                            <span>${sentCount - failedCount} ✓ | ${failedCount} ✗ | ${successRate}% sucesso</span>
                         </div>
-                    </div>
-                    ` : ''}
-                    
-                    <div class="detail-section">
-                        <h4>Resultados</h4>
-                        <div class="results-list">
-                            ${this.renderResults(batch.results || [])}
+                        <div class="detail-item">
+                            <strong><i class="fas fa-images"></i> Mídias:</strong>
+                            <span>${mediaCount} arquivo(s)</span>
                         </div>
+                        <div class="detail-item">
+                            <strong><i class="fas fa-users"></i> Grupos:</strong>
+                            <span>${groupCount} grupo(s)</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong><i class="fas fa-comment"></i> Legenda:</strong>
+                            <span>${batch.caption ? 'Sim' : 'Nenhuma'}</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong><i class="fas fa-calendar"></i> Criado em:</strong>
+                            <span>${new Date(batch.createdAt).toLocaleString('pt-BR')}</span>
+                        </div>
+                        ${batch.whatsappInstance ? `
+                        <div class="detail-item">
+                            <strong><i class="fab fa-whatsapp"></i> Instância:</strong>
+                            <span>${batch.whatsappInstance.sessionName} (${batch.whatsappInstance.phoneNumber || 'N/A'})</span>
+                        </div>
+                        ` : ''}
                     </div>
                 </div>
+                
+                <!-- Seção: Legenda (se existir) -->
+                ${batch.caption ? `
+                <div class="detail-section">
+                    <h4><i class="fas fa-comment-dots"></i> Legenda Completa</h4>
+                    <div class="caption-display">
+                        <p>${this.escapeHtml(batch.caption)}</p>
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- Seção: Mídias -->
+                ${batch.mediaItems && batch.mediaItems.length > 0 ? `
+                <div class="detail-section">
+                    <h4><i class="fas fa-photo-video"></i> Mídias (${batch.mediaItems.length})</h4>
+                    <div class="media-preview-grid large">
+                        ${batch.mediaItems.map((media, index) => this.renderMediaPreview(media, index)).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- Seção: Grupos -->
+                ${batch.contactGroups && batch.contactGroups.length > 0 ? `
+                <div class="detail-section">
+                    <h4><i class="fas fa-users"></i> Grupos de Contatos (${batch.contactGroups.length})</h4>
+                    <div class="groups-list">
+                        ${batch.contactGroups.map(group => `
+                            <div class="group-item">
+                                <i class="fas fa-users"></i>
+                                <span class="group-name">${this.escapeHtml(group.name)}</span>
+                                <span class="group-count">${group.contactCount || 0} contatos</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ` : ''}
+                
+                <!-- Seção: Resultados -->
+                <div class="detail-section">
+                    <h4><i class="fas fa-list-check"></i> Resultados do Envio</h4>
+                    <div class="results-header">
+                        <div class="results-stats">
+                            <span class="stat success">${sentCount - failedCount} enviados</span>
+                            <span class="stat failed">${failedCount} falhas</span>
+                            <span class="stat total">${totalSends} total</span>
+                        </div>
+                        ${batch.results && batch.results.length > 10 ? `
+                        <div class="results-filter">
+                            <input type="text" id="resultsSearch" placeholder="Filtrar resultados..." class="search-input">
+                        </div>
+                        ` : ''}
+                    </div>
+                    <div class="results-list" id="resultsList">
+                        ${this.renderResults(batch.results || [])}
+                    </div>
+                </div>
+                
+                <!-- Seção: Opções de Envio -->
+                ${batch.options ? `
+                <div class="detail-section">
+                    <h4><i class="fas fa-cog"></i> Configurações de Envio</h4>
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <strong>Delay entre mensagens:</strong>
+                            <span>${batch.options.delayBetweenMessages || 3000}ms</span>
+                        </div>
+                        <div class="detail-item">
+                            <strong>Enviar como documento:</strong>
+                            <span>${batch.options.sendAsDocument ? 'Sim' : 'Não'}</span>
+                        </div>
+                        ${batch.options.caption ? `
+                        <div class="detail-item">
+                            <strong>Legenda nas opções:</strong>
+                            <span>${this.escapeHtml(batch.options.caption)}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+            
+            <!-- Botões de Ação -->
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="closeDetailsBtn">
+                    <i class="fas fa-times"></i> Fechar
+                </button>
+                ${(batch.status === 'completed' || batch.status === 'completed_with_errors') ? `
+                <button class="btn btn-success" id="reuseFromDetailsBtn">
+                    <i class="fas fa-recycle"></i> Reutilizar Este Lote
+                </button>
+                ` : ''}
+                <button class="btn btn-info" onclick="window.print()">
+                    <i class="fas fa-print"></i> Imprimir Relatório
+                </button>
             </div>
         </div>
+    </div>
     `;
+
+        // Remover modal anterior se existir
+        const existingModal = document.getElementById('batchDetailsModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
 
         document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-        // Configurar evento de fechamento
+        // Configurar eventos
+        this.setupBatchDetailsEvents(batch);
+    }
+
+    // ✅ NOVO: Configurar eventos do modal de detalhes
+    setupBatchDetailsEvents(batch) {
+        // Fechar modal
         document.getElementById('closeBatchDetailsModal').addEventListener('click', () => {
             this.safeCloseModal('batchDetailsModal');
+        });
+
+        document.getElementById('closeDetailsBtn').addEventListener('click', () => {
+            this.safeCloseModal('batchDetailsModal');
+        });
+
+        // Reutilizar lote
+        const reuseBtn = document.getElementById('reuseFromDetailsBtn');
+        if (reuseBtn) {
+            reuseBtn.addEventListener('click', () => {
+                this.safeCloseModal('batchDetailsModal');
+                this.reuseBatch(batch._id);
+            });
+        }
+
+        // Fechar ao clicar fora
+        document.getElementById('batchDetailsModal').addEventListener('click', (e) => {
+            if (e.target.id === 'batchDetailsModal') {
+                this.safeCloseModal('batchDetailsModal');
+            }
+        });
+
+        // Filtro de resultados
+        const searchInput = document.getElementById('resultsSearch');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.filterResults(e.target.value, batch.results || []);
+            });
+        }
+
+        // Tecla ESC para fechar
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.safeCloseModal('batchDetailsModal');
+            }
         });
     }
 
     renderResults(results) {
         if (!results || results.length === 0) {
-            return '<p class="no-results">Nenhum resultado disponível</p>';
+            return `
+            <div class="no-results">
+                <i class="fas fa-inbox"></i>
+                <p>Nenhum resultado disponível</p>
+            </div>
+        `;
         }
 
         return `
-            <div class="results-table">
-                ${results.slice(0, 50).map(result => `
-                    <div class="result-item ${result.status}">
-                        <div class="result-contact">${result.contact || 'N/A'} (${result.phone || 'N/A'})</div>
-                        <div class="result-media">${result.mediaItem || 'N/A'}</div>
-                        <div class="result-status">${result.status || 'N/A'}</div>
-                        ${result.error ? `<div class="result-error">${result.error}</div>` : ''}
+        <div class="results-table">
+            <div class="table-header">
+                <div class="col-contact">Contato</div>
+                <div class="col-phone">Telefone</div>
+                <div class="col-media">Mídia</div>
+                <div class="col-status">Status</div>
+                <div class="col-time">Horário</div>
+            </div>
+            <div class="table-body">
+                ${results.map((result, index) => `
+                    <div class="table-row ${result.status === 'failed' ? 'failed' : 'success'}">
+                        <div class="col-contact" title="${this.escapeHtml(result.contact || 'N/A')}">
+                            ${this.escapeHtml(result.contact || 'N/A')}
+                        </div>
+                        <div class="col-phone">${result.phone || 'N/A'}</div>
+                        <div class="col-media" title="${this.escapeHtml(result.mediaItem || 'N/A')}">
+                            ${this.escapeHtml(result.mediaItem || 'N/A')}
+                        </div>
+                        <div class="col-status">
+                            <span class="status-badge ${result.status}">
+                                ${result.status === 'sent' ? '✓ Enviado' : '✗ Falhou'}
+                            </span>
+                            ${result.error ? `<div class="error-tooltip">${this.escapeHtml(result.error)}</div>` : ''}
+                        </div>
+                        <div class="col-time">
+                            ${result.timestamp ? new Date(result.timestamp).toLocaleTimeString('pt-BR') : 'N/A'}
+                        </div>
                     </div>
                 `).join('')}
-                ${results.length > 50 ? `<p class="more-results">... e mais ${results.length - 50} resultados</p>` : ''}
             </div>
-        `;
+        </div>
+    `;
+    }
+
+    // ✅ NOVO: Filtrar resultados
+    filterResults(searchTerm, results) {
+        const resultsList = document.getElementById('resultsList');
+        if (!resultsList || !searchTerm) {
+            resultsList.innerHTML = this.renderResults(results);
+            return;
+        }
+
+        const filteredResults = results.filter(result =>
+            (result.contact && result.contact.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (result.phone && result.phone.includes(searchTerm)) ||
+            (result.mediaItem && result.mediaItem.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (result.error && result.error.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+
+        resultsList.innerHTML = this.renderResults(filteredResults);
     }
 
     async getConnectedInstances() {

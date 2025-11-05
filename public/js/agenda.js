@@ -5,7 +5,7 @@ class AgendaManager {
         this.contacts = [];
         this.groups = [];
         this.whatsappInstances = [];
-        this.loadThemes = new ThemeManager().loadThemes;
+        // this.loadThemes = new ThemeManager().loadThemes;
 
         this.state = {
             currentSection: 'contactsSection',
@@ -56,7 +56,7 @@ class AgendaManager {
         this.setupEventListeners();
         this.setupNavigation();
         this.loadInitialData();
-        this.loadThemes();
+        // this.loadThemes();
 
         console.log('✅ AgendaManager inicializado com sucesso');
         return true;
