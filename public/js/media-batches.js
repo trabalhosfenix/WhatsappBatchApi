@@ -2293,4 +2293,4 @@ class MediaBatchesManager {
 }
 
 // Inicialização global para garantir que os métodos estejam disponíveis
-window.MediaBatchesManager = MediaBatchesManager;
+window.MediaBatchesManager = MediaBatchesManager;  
