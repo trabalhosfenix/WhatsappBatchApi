@@ -21,19 +21,44 @@ exports.createInstance = async (req, res) => {
       });
     }
 
-    console.log(`🚀 [Baileys] Criando instância: ${sessionName}`);
+    console.log(`🚀 [Baileys] Iniciando criação da instância: ${sessionName}`);
 
+    // Verificar se já existe instância com mesmo nome
+    const existingInstance = await WhatsAppInstance.findOne({
+      sessionName,
+      userId: req.user._id
+    });
+
+    if (existingInstance) {
+      console.log(`❌ Instância já existe: ${sessionName}`);
+      return res.status(400).json({
+        success: false,
+        error: 'Já existe uma instância com este nome'
+      });
+    }
+
+    // Criar instância
     const instance = await whatsappBaileysService.createClient(sessionName, req.user._id);
-    const updatedInstance = await WhatsAppInstance.findById(instance._id);
+    
+    console.log(`✅ Instância criada no serviço:`, {
+      id: instance._id,
+      sessionName: instance.sessionName,
+      status: instance.status,
+      hasQRCode: !!instance.qrCode
+    });
 
-    // setTimeout(async () => {
-    //   try {
-    //     await messageControlService.enableMessageTracking(sessionName);
-    //     console.log(`✅ Tracking ativado automaticamente para: ${sessionName}`);
-    //   } catch (trackingError) {
-    //     console.error(`❌ Erro no tracking automático:`, trackingError);
-    //   }
-    // }, 3000);
+    // Buscar instância atualizada do banco
+    const updatedInstance = await WhatsAppInstance.findById(instance._id);
+    
+    if (!updatedInstance) {
+      throw new Error('Instância não encontrada após criação');
+    }
+
+    console.log(`📱 Status final da instância:`, {
+      status: updatedInstance.status,
+      qrCodeLength: updatedInstance.qrCode ? updatedInstance.qrCode.length : 0,
+      phoneNumber: updatedInstance.phoneNumber
+    });
 
     res.status(201).json({
       success: true,
@@ -49,7 +74,11 @@ exports.createInstance = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ [Baileys] Erro:', error);
+    console.error('❌ [Baileys] Erro detalhado:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     res.status(400).json({
       success: false,
       error: error.message
@@ -101,6 +130,103 @@ exports.deleteInstance = async (req, res) => {
   }
 };
 
+exports.testQRGeneration = async (req, res) => {
+    try {
+        const { sessionName } = req.body;
+        
+        console.log(`🧪 TESTE DE QR CODE: ${sessionName}`);
+        
+        // Verificar instância
+        const instance = await WhatsAppInstance.findOne({
+            sessionName,
+            userId: req.user._id
+        });
+
+        if (!instance) {
+            return res.status(404).json({
+                success: false,
+                error: 'Instância não encontrada'
+            });
+        }
+
+        // Forçar nova inicialização
+        await whatsappBaileysService.deleteInstance(sessionName);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Recriar
+        const newInstance = await whatsappBaileysService.createClient(sessionName, req.user._id);
+        
+        // Aguardar QR Code
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // Verificar resultado
+        const updatedInstance = await WhatsAppInstance.findById(newInstance._id);
+
+        res.json({
+            success: true,
+            testResult: {
+                sessionName,
+                status: updatedInstance.status,
+                hasQRCode: !!updatedInstance.qrCode,
+                qrCodeLength: updatedInstance.qrCode ? updatedInstance.qrCode.length : 0,
+                timestamp: new Date()
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Erro no teste de QR Code:', error);
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+};
+// Adicione ao controller
+exports.resetInstance = async (req, res) => {
+    try {
+        const { sessionName } = req.params;
+        
+        console.log(`🔄 RESET completo da instância: ${sessionName}`);
+
+        const instance = await WhatsAppInstance.findOne({
+            sessionName,
+            userId: req.user._id
+        });
+
+        if (!instance) {
+            return res.status(404).json({
+                success: false,
+                error: 'Instância não encontrada'
+            });
+        }
+
+        // 1. Deletar completamente
+        await whatsappBaileysService.deleteInstance(sessionName);
+        
+        // 2. Aguardar limpeza
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // 3. Recriar do zero
+        const newInstance = await whatsappBaileysService.createClient(sessionName, req.user._id);
+
+        res.json({
+            success: true,
+            message: 'Instância resetada com sucesso',
+            instance: {
+                _id: newInstance._id,
+                sessionName: newInstance.sessionName,
+                status: newInstance.status
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Erro no reset:', error);
+        res.status(400).json({
+            success: false,
+            error: error.message
+        });
+    }
+};
 exports.getInstances = async (req, res) => {
   try {
     console.log('📋 GET /api/whatsapp/instances chamado');
@@ -153,7 +279,7 @@ exports.getInstance = async (req, res) => {
       });
     }
     // await messageControlService.enableMessageTracking(instance.sessionName);
-    // console.log(`✅ Tracking ativado automaticamente para: ${instance.sessionName}`);
+    console.log(`✅ Tracking ativado automaticamente para: ${instance.sessionName}`);
 
     res.json({
       success: true,

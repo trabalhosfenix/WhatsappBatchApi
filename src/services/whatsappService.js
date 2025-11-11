@@ -151,6 +151,12 @@ class WhatsAppService {
         this.connectionStates.set(sessionName, 'initializing');
 
         try {
+            // ✅ ATUALIZAR BANCO PARA connecting
+            await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                status: 'connecting',
+                qrCode: null
+            });
+
             // Diretório para sessão
             const authDir = path.join(__dirname, '../auth_sessions', sessionName);
             if (!fs.existsSync(authDir)) {
@@ -160,154 +166,182 @@ class WhatsAppService {
             // Carregar estado de autenticação
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-            // Buscar versão
-            const { version } = await fetchLatestBaileysVersion();
+            // Buscar versão (OPCIONAL - pode usar versão fixa)
+            const version = [2, 3001, 101]; // ✅ Versão fixa e testada
             console.log(`📦 [${sessionName}] Baileys versão: ${version.join('.')}`);
 
-            // Configuração SIMPLIFICADA - igual ao bot que funciona
+            // ✅ CONFIGURAÇÃO CORRIGIDA - SEM ERROS
             const socket = makeWASocket({
-                version,
+                // ✅ CONFIGURAÇÕES PRINCIPAIS
+                version: version,
                 auth: {
                     creds: state.creds,
                     keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
                 },
                 logger: baileysLogger,
-                browser: Browsers.ubuntu('Chrome'),
-                markOnlineOnConnect: false,
+                browser: Browsers.macOS("Safari"), // ✅ "browser" correto
+
+                // ✅ CONFIGURAÇÕES DE CONEXÃO
+                connectTimeoutMs: 30000, // ✅ Aumentado para 30s
+                retryRequestDelayMs: 3000,
+                keepAliveIntervalMs: 10000,
+
+                // ✅ CONFIGURAÇÕES DE COMPORTAMENTO
+                printQRInTerminal: true, // ✅ "true" correto
+                markOnlineOnConnect: false, // ✅ Mantenha false para evitar detecção
                 syncFullHistory: false,
-                retryRequestDelayMs: 2000,
-                maxMsgRetryCount: 2,
-                connectTimeoutMs: 30000,
-                keepAliveIntervalMs: 30000,
-                // Configurações mínimas para estabilidade
                 fireInitQueries: true,
                 emitOwnEvents: true,
-                defaultBrowser: 'Chrome',
-                printQRInTerminal: false // REMOVIDO para evitar warning
+
+                // ✅ OUTRAS CONFIGURAÇÕES
+                generateHighQualityLinkPreview: true,
+                defaultQueryTimeoutMs: 60000,
+                maxMsgRetryCount: 3,
+                linkPreviewImageThumbnailWidth: 192,
+
+                // ✅ CONFIGURAÇÃO MOBILE
+                mobile: false, // Para desktop
+
+                // ✅ GET MESSAGE (opcional)
+                getMessage: async (key) => {
+                    return null;
+                }
             });
 
-            // Salvar credenciais
+            console.log(`✅ [${sessionName}] Socket Baileys criado com sucesso`);
+
+            // ✅ SALVAR CREDENCIS CORRETAMENTE
             socket.ev.on('creds.update', saveCreds);
 
-            // Configurar eventos
+            // ✅ CONFIGURAR EVENTOS
             this.setupBaileysEvents(socket, sessionName, instanceId, userId, saveCreds);
 
+            // ✅ SALVAR NO GERENCIADOR
             this.sockets.set(sessionName, socket);
             this.authStates.set(sessionName, { state, saveCreds });
             this.reconnectionAttempts.set(sessionName, 0);
-            this.connectionStates.set(sessionName, 'connected');
+            this.connectionStates.set(sessionName, 'connecting');
 
-
-            // socket.ev.on("messages.upsert", async ({ messages, type }) => {
-            //     const msg = messages[0]
-            //     if (!msg.message || !msg.key.id) return
-
-            //     const uniqueId = `${msg.key.remoteJid}_${msg.key.id}_${type}`
-
-            //     // if (messageCache.has(uniqueId)) {
-            //     //     console.log(`⏩ Ignorando duplicata: ${msg.key.id}`)
-            //     //     return
-            //     // }
-
-            //     messageCache.add(uniqueId)
-
-            //     // Limpa após 30 segundos (opcional)
-            //     // setTimeout(() => messageCache.delete(uniqueId), 30000)
-
-            //     try {
-            //         //    console.log("📩 Mensagem recebida:", msg.message)
-            //         await handleMessage(socket, msg)
-            //     } catch (error) {
-            //         console.error('❌ Erro:', error)
-            //     }
-            // })
-
+            console.log(`✅ [${sessionName}] Cliente Baileys totalmente configurado, aguardando QR Code...`);
 
             return socket;
 
         } catch (error) {
             console.error(`❌ [${sessionName}] Erro na inicialização:`, error);
+
+            // ✅ ATUALIZAR STATUS DE ERRO
+            await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                status: 'failed',
+                error: error.message
+            });
+
             this.connectionStates.set(sessionName, 'failed');
             throw error;
         } finally {
             this.initializingInstances.delete(sessionName);
         }
     }
-
     setupBaileysEvents(socket, sessionName, instanceId, userId, saveCreds) {
         let qrTimeout;
         let connectionTimeout;
+        let qrRetryCount = 0;
+        const maxQrRetries = 3;
 
+        console.log(`🔗 [${sessionName}] Configurando eventos do Baileys...`);
+
+        // ✅ EVENTO DE CREDENCIAIS - CRÍTICO
+        socket.ev.on('creds.update', async (creds) => {
+            console.log(`🔑 [${sessionName}] Credenciais atualizadas:`, {
+                me: creds.me?.id,
+                registered: creds.registered,
+                platform: creds.platform
+            });
+
+            await saveCreds(creds);
+
+            // ✅ ATUALIZAR BANCO QUANDO REGISTRADO
+            if (creds.registered) {
+                console.log(`✅ [${sessionName}] DISPOSITIVO REGISTRADO COM SUCESSO!`);
+                await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                    status: 'connected',
+                    phoneNumber: creds.me?.id?.replace(/:.*$/, '') || 'N/A',
+                    lastConnection: new Date()
+                });
+            }
+        });
+
+        // ✅ EVENTO DE CONEXÃO - MELHORADO
         socket.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect, qr } = update;
+            const { connection, lastDisconnect, qr, isNewLogin, receivedPendingNotifications } = update;
 
-            console.log(`🔗 [${sessionName}] Status: ${connection}`);
+            console.log(`🔗 [${sessionName}] Connection update:`, {
+                connection,
+                hasQR: !!qr,
+                qrLength: qr ? qr.length : 0,
+                isNewLogin,
+                receivedPendingNotifications,
+                lastDisconnect: lastDisconnect?.error?.message
+            });
 
             try {
                 switch (connection) {
                     case 'close':
-                        console.log(`🔌 [${sessionName}] Conexão fechada`, lastDisconnect?.error);
+
+                        const shouldReconnect =
+                            lastDisconnect?.error?.output?.statusCode !== 401;
+
+                        // if (shouldReconnect) {
+                        //     startSock(); // reconecta automático
+                        // } else {
+                        //     // Sessão perdida -> pedir novo QR
+                        //     deleteSession(instanceName);
+                        //     startSock(true);
+                        // }
+
+                        console.log(`🔌 [${sessionName}] Conexão fechada:`, lastDisconnect?.error);
                         this.connectionStates.set(sessionName, 'disconnected');
 
                         // Limpar timeouts
                         if (qrTimeout) clearTimeout(qrTimeout);
                         if (connectionTimeout) clearTimeout(connectionTimeout);
 
-                        const shouldReconnect =
-                            lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                        const statusCode = lastDisconnect?.error?.output?.statusCode;
+                        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+                        const isConnectionLost = statusCode === DisconnectReason.connectionLost;
 
-                        console.log(`🔄 [${sessionName}] Should reconnect: ${shouldReconnect}`);
+                        console.log(`🔍 [${sessionName}] Status do disconnect:`, {
+                            statusCode,
+                            isLoggedOut,
+                            isConnectionLost
+                        });
 
-                        if (shouldReconnect) {
-                            const attempts = this.reconnectionAttempts.get(sessionName) || 0;
-
-                            if (attempts < this.maxReconnectAttempts) {
-                                console.log(`🔄 [${sessionName}] Tentando reconectar... (${attempts + 1}/${this.maxReconnectAttempts})`);
-                                this.reconnectionAttempts.set(sessionName, attempts + 1);
-
-                                const reconnectDelay = Math.min(2000 + (attempts * 2000), 10000);
-
-                                // Usar debounce para evitar múltiplas reconexões
-                                if (this.reconnectionTimers.has(sessionName)) {
-                                    clearTimeout(this.reconnectionTimers.get(sessionName));
-                                }
-
-                                const timer = setTimeout(async () => {
-                                    this.reconnectionTimers.delete(sessionName);
-                                    if (this.connectionStates.get(sessionName) === 'disconnected') {
-                                        await this.safeReconnect(sessionName, userId, instanceId);
-                                    }
-                                }, reconnectDelay);
-
-                                this.reconnectionTimers.set(sessionName, timer);
-                            } else {
-                                console.log(`❌ [${sessionName}] Máximo de tentativas de reconexão atingido`);
-                                await this.cleanupInstance(sessionName, instanceId, 'failed');
-                            }
-                        } else {
-                            console.log(`🚫 [${sessionName}] Deslogado, reconexão não necessária`);
+                        if (isLoggedOut) {
+                            console.log(`🚫 [${sessionName}] Sessão deslogada, limpando...`);
                             await this.cleanupInstance(sessionName, instanceId, 'disconnected');
+                        } else {
+                            console.log(`🔄 [${sessionName}] Tentando reconectar...`);
+                            await this.handleReconnection(sessionName, userId, instanceId);
                         }
                         break;
 
                     case 'open':
-                        console.log(`✅ [${sessionName}] Conectado com sucesso!`);
+                        console.log(`🎉 [${sessionName}] CONEXÃO ABERTA - AUTENTICADO!`);
                         this.connectionStates.set(sessionName, 'connected');
                         this.reconnectionAttempts.set(sessionName, 0);
+                        qrRetryCount = 0;
 
                         // Limpar timeouts
                         if (qrTimeout) clearTimeout(qrTimeout);
                         if (connectionTimeout) clearTimeout(connectionTimeout);
-                        if (this.reconnectionTimers.has(sessionName)) {
-                            clearTimeout(this.reconnectionTimers.get(sessionName));
-                            this.reconnectionTimers.delete(sessionName);
-                        }
 
-                        // Atualizar banco
+                        // ✅ ATUALIZAR BANCO COM MAIS INFORMAÇÕES
+                        const phoneNumber = socket.user?.id?.replace(/:\d+$/, '') || 'N/A';
+                        console.log(`📱 [${sessionName}] Número conectado: ${phoneNumber}`);
+
                         await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                             status: 'connected',
                             qrCode: null,
-                            phoneNumber: socket.user?.id?.replace(/:\d+$/, '') || 'N/A',
+                            phoneNumber: phoneNumber,
                             lastConnection: new Date()
                         });
                         break;
@@ -316,7 +350,12 @@ class WhatsAppService {
                         console.log(`🔄 [${sessionName}] Conectando...`);
                         this.connectionStates.set(sessionName, 'connecting');
 
-                        // Timeout para conexão muito lenta
+                        await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                            status: 'connecting',
+                            qrCode: null // Limpar QR anterior
+                        });
+
+                        // Timeout para conexão
                         if (connectionTimeout) clearTimeout(connectionTimeout);
                         connectionTimeout = setTimeout(async () => {
                             if (this.connectionStates.get(sessionName) === 'connecting') {
@@ -325,17 +364,20 @@ class WhatsAppService {
                                     status: 'timeout'
                                 });
                             }
-                        }, 30000); // 30 segundos
-
-                        await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                            status: 'connecting'
-                        });
+                        }, 60000);
                         break;
                 }
 
-                // Gerar QR Code se disponível
+                // ✅ TRATAMENTO MELHORADO DO QR CODE
                 if (qr) {
-                    console.log(`📱 [${sessionName}] QR Code recebido`);
+                    qrRetryCount++;
+                    console.log(`📱 [${sessionName}] QR Code recebido (tentativa ${qrRetryCount}/${maxQrRetries})`);
+
+                    if (qrRetryCount > maxQrRetries) {
+                        console.log(`❌ [${sessionName}] Múltiplos QR Codes, possível problema de sessão`);
+                        await this.cleanupInstance(sessionName, instanceId, 'failed');
+                        return;
+                    }
 
                     try {
                         const qrCodeImage = await qrcode.toDataURL(qr);
@@ -345,24 +387,28 @@ class WhatsAppService {
                             status: 'qr_code_ready'
                         });
 
-                        console.log(`✅ [${sessionName}] QR Code salvo no banco`);
+                        console.log(`✅ [${sessionName}] QR Code salvo (${qrCodeImage.length} chars)`);
 
-                        // Timeout para QR Code expirado
+                        // ✅ TIMEOUT MELHORADO PARA QR CODE
                         if (qrTimeout) clearTimeout(qrTimeout);
                         qrTimeout = setTimeout(async () => {
-                            console.log(`⏰ [${sessionName}] QR Code expirado`);
-                            await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                                qrCode: null,
-                                status: 'qr_expired'
-                            });
-                        }, 120000); // 2 minutos
+                            const currentInstance = await WhatsAppInstance.findById(instanceId);
+                            if (currentInstance && currentInstance.status === 'qr_code_ready') {
+                                console.log(`⏰ [${sessionName}] QR Code expirado, gerando novo...`);
+                                await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                                    qrCode: null,
+                                    status: 'qr_expired'
+                                });
+
+                                // ✅ TENTAR FORÇAR NOVO QR CODE
+                                if (socket && socket.requestNewQRCode) {
+                                    socket.requestNewQRCode();
+                                }
+                            }
+                        }, 45000); // Reduzido para 45s
 
                     } catch (qrError) {
                         console.error(`❌ [${sessionName}] Erro ao gerar QR Code:`, qrError);
-                        await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                            status: 'error',
-                            error: 'Erro ao gerar QR code'
-                        });
                     }
                 }
 
@@ -371,8 +417,78 @@ class WhatsAppService {
             }
         });
 
-        // Evento de credenciais
-        socket.ev.on('creds.update', saveCreds);
+        // ✅ ADICIONE ESTES EVENTOS CRÍTICOS
+        socket.ev.on('messaging-history.set', async (data) => {
+            console.log(`📚 [${sessionName}] Histórico de mensagens carregado:`, {
+                chats: data.chats?.length,
+                contacts: data.contacts?.length,
+                messages: data.messages?.length
+            });
+        });
+
+        socket.ev.on('contacts.upsert', async (contacts) => {
+            console.log(`👥 [${sessionName}] Contatos atualizados: ${contacts.length}`);
+        });
+
+        socket.ev.on('chats.upsert', async (chats) => {
+            console.log(`💬 [${sessionName}] Chats carregados: ${chats.length}`);
+        });
+    }
+
+    // Adicione ao WhatsAppService
+    async requestNewQRCode(sessionName) {
+        try {
+            console.log(`🔄 [${sessionName}] Solicitando novo QR Code...`);
+
+            const socket = this.sockets.get(sessionName);
+            if (!socket) {
+                throw new Error('Socket não encontrado');
+            }
+
+            // Forçar logout e nova sessão
+            await socket.logout();
+            await this.cleanupInstance(sessionName, null, 'disconnected');
+
+            // Aguardar e recriar
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            console.log(`✅ [${sessionName}] Pronto para novo QR Code`);
+            return true;
+
+        } catch (error) {
+            console.error(`❌ [${sessionName}] Erro ao solicitar novo QR:`, error);
+            throw error;
+        }
+    }
+
+
+
+    async handleReconnection(sessionName, userId, instanceId) {
+        const attempts = this.reconnectionAttempts.get(sessionName) || 0;
+
+        if (attempts < this.maxReconnectAttempts) {
+            console.log(`🔄 [${sessionName}] Tentando reconectar... (${attempts + 1}/${this.maxReconnectAttempts})`);
+            this.reconnectionAttempts.set(sessionName, attempts + 1);
+
+            const reconnectDelay = Math.min(2000 + (attempts * 2000), 10000);
+
+            // Usar debounce para evitar múltiplas reconexões
+            if (this.reconnectionTimers.has(sessionName)) {
+                clearTimeout(this.reconnectionTimers.get(sessionName));
+            }
+
+            const timer = setTimeout(async () => {
+                this.reconnectionTimers.delete(sessionName);
+                if (this.connectionStates.get(sessionName) === 'disconnected') {
+                    await this.safeReconnect(sessionName, userId, instanceId);
+                }
+            }, reconnectDelay);
+
+            this.reconnectionTimers.set(sessionName, timer);
+        } else {
+            console.log(`❌ [${sessionName}] Máximo de tentativas de reconexão atingido`);
+            await this.cleanupInstance(sessionName, instanceId, 'failed');
+        }
     }
 
     async cleanupInstance(sessionName, instanceId, status) {

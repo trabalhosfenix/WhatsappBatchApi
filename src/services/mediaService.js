@@ -80,7 +80,7 @@ class MediaService {
             // ✅ ENVIAR VIA WHATSAPP SERVICE
             const result = await socket.sendMessage(jid, messageOptions);
 
-            console.log(`✅ [MediaService] Mídia enviada com sucesso para ${jid}`, {
+            console.log(`✅ [MediaService] Mídia enviada com sucesso para ${jid} |\n ${JSON.stringify(result)}`, {
                 messageId: result.key?.id,
                 timestamp: new Date().toISOString()
             });

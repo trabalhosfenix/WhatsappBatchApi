@@ -1351,6 +1351,7 @@ class WhatsAppManager {
 
     // Métodos utilitários para gerenciamento de estado
     getInstance(instanceId) {
+        console.log("get instancia")
         return this.state.instances.find(inst => inst._id === instanceId);
     }
 
