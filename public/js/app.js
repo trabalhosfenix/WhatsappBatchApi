@@ -9,6 +9,7 @@ class Auth {
         this.user = JSON.parse(localStorage.getItem('user'));
         this.init();
     }
+
     init() {
         this.checkAuth();
         this.setupEventListeners();
@@ -67,8 +68,6 @@ class Auth {
             this.hideLoading();
         }
     }
-
-
 
     setupEventListeners() {
         // Login form
@@ -641,11 +640,13 @@ class WhatsAppManager {
         this.state = {
             currentInstance: null,
             instances: [],
+            isSaving: false,
             qrCodeCheck: {
-                interval: null,
+                intervalId: null,
                 instanceId: null,
                 attempts: 0,
-                maxAttempts: 60 // 3 minutos (60 * 3s)
+                maxAttempts: 60, // 3 minutos (60 * 3s)
+                delayMs: 3000
             },
             cache: {
                 instances: null,
@@ -656,165 +657,269 @@ class WhatsAppManager {
 
         // Event system para desacoplamento
         this.eventHandlers = {};
+
+        // Armazenar references de event listeners para remover depois
+        this._bound = {
+            documentClick: this._handleDocumentClick.bind(this),
+            keydown: this._handleKeydown.bind(this),
+            windowClick: this._handleWindowClick.bind(this),
+            instanceListClick: this._handleInstanceListClick.bind(this)
+        };
+
+        // AbortController padrão para requisições longas
+        this._defaultRequestTimeout = 15000; // ms
     }
 
-    // Sistema de eventos para melhor comunicação
-    on(event, handler) {
-        if (!this.eventHandlers[event]) {
-            this.eventHandlers[event] = [];
+    updateAddInstanceButton() {
+        const addInstanceBtn = document.getElementById('addInstanceBtn');
+        if (!addInstanceBtn) return;
+
+        const connectedInstances = this.getConnectedInstances();
+
+        if (connectedInstances.length > 0) {
+            // Já existe uma instância conectada - desabilitar botão
+            addInstanceBtn.disabled = true;
+            addInstanceBtn.title = 'Já existe uma instância conectada. Desconecte-a antes de criar uma nova.';
+            addInstanceBtn.style.opacity = '0.6';
+            addInstanceBtn.style.cursor = 'not-allowed';
+        } else {
+            // Nenhuma instância conectada - habilitar botão
+            addInstanceBtn.disabled = false;
+            addInstanceBtn.title = 'Criar nova instância do WhatsApp';
+            addInstanceBtn.style.opacity = '1';
+            addInstanceBtn.style.cursor = 'pointer';
         }
+    }
+
+    /* ---------------------- EventEmitter simples --------------------- */
+    on(event, handler) {
+        if (!this.eventHandlers[event]) this.eventHandlers[event] = [];
         this.eventHandlers[event].push(handler);
     }
 
     off(event, handler) {
-        if (this.eventHandlers[event]) {
-            this.eventHandlers[event] = this.eventHandlers[event].filter(h => h !== handler);
-        }
+        if (!this.eventHandlers[event]) return;
+        this.eventHandlers[event] = this.eventHandlers[event].filter(h => h !== handler);
     }
 
     emit(event, data) {
-        if (this.eventHandlers[event]) {
-            this.eventHandlers[event].forEach(handler => {
-                try {
-                    handler(data);
-                } catch (error) {
-                    console.error(`Error in event handler for ${event}:`, error);
-                }
-            });
+        if (!this.eventHandlers[event]) return;
+        for (const handler of this.eventHandlers[event]) {
+            try {
+                handler(data);
+            } catch (err) {
+                console.error(`Error in event handler for ${event}:`, err);
+            }
         }
     }
+    /* ----------------------------------------------------------------- */
 
+    /* ---------------------- Inicialização ---------------------------- */
     init() {
         this.setupEventListeners();
         this.setupGlobalEventHandlers();
     }
 
     setupEventListeners() {
-        console.log('Setting up WhatsAppManager event listeners');
 
-        // Usar event delegation para o botão de adicionar instância
-        document.addEventListener('click', (e) => {
-            if (e.target.id === 'addInstanceBtn' || e.target.closest('#addInstanceBtn')) {
-                e.preventDefault();
-                console.log('Add Instance button clicked via delegation');
-                this.openInstanceModal();
-            }
-        });
-
-        // Add instance button - approach direta também
+        // Add instance button - LISTENER DIRETO
         const addInstanceBtn = document.getElementById('addInstanceBtn');
         if (addInstanceBtn) {
-            console.log('Add Instance button found, attaching listener');
-            // Remover listeners anteriores para evitar duplicação
-            addInstanceBtn.replaceWith(addInstanceBtn.cloneNode(true));
-            const newBtn = document.getElementById('addInstanceBtn');
-
-            newBtn.addEventListener('click', (e) => {
+            console.log('✅ Configurando listener para botão Nova Instância');
+            addInstanceBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('Add Instance button clicked directly');
+                console.log('✅ Botão Nova Instância clicado');
                 this.openInstanceModal();
             });
-        } else {
-            console.warn('Add Instance button not found in DOM');
         }
 
-        // Instance form submission
+
+        // Delegation: clicks no documento para botões da UI (sempre prefira data-action/data-id)
+        document.addEventListener('click', this._bound.documentClick);
+
+        // Listener específico para lista de instâncias (delegation dentro do container)
+        const instancesList = document.getElementById('instancesList');
+        if (instancesList) {
+            instancesList.addEventListener('click', this._bound.instanceListClick);
+        }
+
+        // Form submit
         const instanceForm = document.getElementById('instanceForm');
         if (instanceForm) {
+            // Use named handler para poder remover
             instanceForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.saveInstance();
             });
         }
 
-        // Modal close buttons
-        document.querySelectorAll('.close').forEach(closeBtn => {
-            closeBtn.addEventListener('click', (e) => {
+        // Close buttons (delegation também poderia funcionar)
+        document.querySelectorAll('.close').forEach(btn => {
+            btn.addEventListener('click', (e) => {
                 const modal = e.target.closest('.modal');
-                if (modal) {
-                    modal.style.display = 'none';
-                }
+                if (modal) modal.style.display = 'none';
                 this.stopQRCodeCheck();
             });
         });
     }
 
     setupGlobalEventHandlers() {
-        // Fechar modais ao clicar fora
-        window.addEventListener('click', (e) => {
-            if (e.target.classList.contains('modal')) {
-                e.target.style.display = 'none';
-                if (e.target.id === 'qrcodeModal') {
-                    this.stopQRCodeCheck();
-                }
-            }
-        });
+        // Click fora do modal fecha (usando handler bound)
+        window.addEventListener('click', this._bound.windowClick);
 
-        // Tecla ESC para fechar modais
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeAllModals();
-            }
-        });
+        // ESC -> fechar modais
+        document.addEventListener('keydown', this._bound.keydown);
+    }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- Handlers internos ------------------------ */
+    _handleDocumentClick(e) {
+        // Delegation para botões de abrir modal, adicionar instância, etc.
+        const addBtn = e.target.closest('[data-action="add-instance"]');
+        if (addBtn) {
+            e.preventDefault();
+            this.openInstanceModal();
+            return;
+        }
+
+        const closeBtn = e.target.closest('[data-action="close-modal"]');
+        if (closeBtn) {
+            const modal = closeBtn.closest('.modal');
+            if (modal) modal.style.display = 'none';
+            this.stopQRCodeCheck();
+            return;
+        }
+
+        // Qualquer outro botão global que precise ser tratado pode ser adicionado aqui.
     }
 
-    closeAllModals() {
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.style.display = 'none';
-        });
-        this.stopQRCodeCheck();
+    _handleInstanceListClick(e) {
+        const button = e.target.closest('button[data-action]');
+        if (!button) return;
+
+        const action = button.dataset.action;
+        const instanceId = button.dataset.id;
+
+        switch (action) {
+            case 'show-qrcode':
+                this.showQRCode(instanceId);
+                break;
+            case 'load-groups':
+                this.loadGroups(instanceId);
+                break;
+            case 'view-groups':
+                this.viewGroups(instanceId);
+                break;
+            case 'disconnect':
+                this.disconnectInstance(instanceId);
+                break;
+            case 'delete':
+                this.deleteInstance(instanceId);
+                break;
+            case 'edit':
+                // abrir modal de edição (precisa ter os dados carregados)
+                const inst = this.getInstance(instanceId);
+                this.openInstanceModal(inst || null);
+                break;
+            default:
+                console.warn('Action não mapeada:', action);
+        }
     }
 
-    async loadInstances(forceRefresh = false) {
+    _handleWindowClick(e) {
+        if (e.target.classList && e.target.classList.contains('modal')) {
+            e.target.style.display = 'none';
+            if (e.target.id === 'qrcodeModal') this.stopQRCodeCheck();
+        }
+    }
+
+    _handleKeydown(e) {
+        if (e.key === 'Escape') this.closeAllModals();
+    }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- Fetch helper (Abort + timeout) ----------- */
+    async _fetchJson(url, opts = {}, timeout = this._defaultRequestTimeout) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        opts.signal = controller.signal;
+
+        // Mesclar headers de auth (se existirem)
+        const headers = Object.assign({}, opts.headers || {}, this.getAuthHeaders());
+        opts.headers = headers;
+
         try {
-            if (!this.auth) {
-                console.error('Auth manager not available');
-                this.emit('error', new Error('Auth manager not available'));
-                return;
+            const res = await fetch(url, opts);
+            clearTimeout(id);
+            const text = await res.text();
+            // tentar parse seguro
+            try {
+                const json = text ? JSON.parse(text) : {};
+                return json;
+            } catch (err) {
+                throw new Error(`Resposta inválida do servidor: ${text.slice(0, 200)}`);
             }
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                throw new Error('Requisição expirou (timeout)');
+            }
+            throw err;
+        }
+    }
+    /* ----------------------------------------------------------------- */
 
-            // Verificar cache
+    /* ---------------------- Instâncias / Cache ----------------------- */
+    async loadInstances(forceRefresh = false) {
+        if (!this.auth) {
+            console.error('Auth manager not available');
+            this.emit('error', new Error('Auth manager not available'));
+            return;
+        }
+
+        try {
             const now = Date.now();
-            if (!forceRefresh &&
-                this.state.cache.instances &&
-                this.state.cache.lastUpdated &&
-                (now - this.state.cache.lastUpdated) < this.state.cache.cacheTimeout) {
+            const cached = this.state.cache.instances;
+            const last = this.state.cache.lastUpdated;
+
+            const cacheValid = !forceRefresh &&
+                Array.isArray(cached) &&
+                cached.length > 0 &&
+                last &&
+                (now - last) < this.state.cache.cacheTimeout;
+
+            if (cacheValid) {
                 console.log('Using cached instances');
-                this.renderInstances(this.state.cache.instances);
+                this.state.instances = cached;
+                this.renderInstances(cached);
+                this.emit('instancesLoaded', cached);
                 return;
             }
 
-            this.auth.showLoading();
-            const response = await fetch('/api/whatsapp/instances', {
-                headers: this.auth.getAuthHeaders()
+            this.showLoading();
+            const data = await this._fetchJson('/api/whatsapp/instances', {
+                method: 'GET'
             });
 
-            const data = await response.json();
-
-            if (data.success) {
-                // Atualizar cache
-                this.state.cache.instances = data.instances;
+            if (data && data.success) {
+                this.state.cache.instances = data.instances || [];
                 this.state.cache.lastUpdated = Date.now();
 
-                this.state.instances = data.instances;
-                this.renderInstances(data.instances);
-                this.emit('instancesLoaded', data.instances);
+                this.state.instances = data.instances || [];
+                this.renderInstances(this.state.instances);
+                this.emit('instancesLoaded', this.state.instances);
             } else {
-                throw new Error(data.error || 'Erro ao carregar instâncias');
+                throw new Error(data && data.error ? data.error : 'Erro ao carregar instâncias');
             }
         } catch (error) {
             console.error('Error loading instances:', error);
             this.emit('error', error);
-
-            if (this.auth) {
-                this.auth.showNotification(error.message, 'error');
-            }
+            this.showNotification(error.message || 'Erro desconhecido', 'error');
             this.renderInstances([]);
         } finally {
-            if (this.auth) {
-                this.auth.hideLoading();
-            }
+            this.hideLoading();
         }
+        this.renderInstances(this.state.instances);
+        this.updateAddInstanceButton();
     }
 
     renderInstances(instances) {
@@ -832,49 +937,389 @@ class WhatsAppManager {
             return;
         }
 
-        container.innerHTML = instances.map(instance => `
-            <div class="list-item" data-instance-id="${instance._id}">
-                <div class="list-item-info">
-                    <h4>${instance.sessionName}</h4>
-                    <p>
-                        Status: 
-                        <span class="status-badge status-${instance.status}">
-                            ${this.getStatusText(instance.status)}
-                        </span>
-                    </p>
-                    <p>Número: ${instance.phoneNumber || 'Não conectado'}</p>
-                    <small>Criado em: ${this.formatDate(instance.createdAt)}</small>
+        // Gerar HTML usando data-attributes (sem inline onclick)
+        container.innerHTML = instances.map(instance => {
+            const id = instance._id || '';
+            const statusText = this.getStatusText(instance.status);
+            const phone = instance.phoneNumber || 'Não conectado';
+
+            // Ações condicionais
+            const actions = [];
+
+            if (instance.status === 'connecting') {
+                actions.push(`<button class="btn btn-info" data-action="show-qrcode" data-id="${id}"><i class="fas fa-qrcode"></i> QR Code</button>`);
+            }
+            if (instance.status === 'connected') {
+                actions.push(`<button class="btn btn-success" data-action="load-groups" data-id="${id}"><i class="fas fa-sync"></i> Carregar Grupos</button>`);
+                actions.push(`<button class="btn btn-warning" data-action="view-groups" data-id="${id}"><i class="fas fa-users"></i> Ver Grupos</button>`);
+                actions.push(`<button class="btn btn-secondary" data-action="disconnect" data-id="${id}"><i class="fas fa-power-off"></i> Desconectar</button>`);
+            }
+
+            actions.push(`<button class="btn btn-primary" data-action="edit" data-id="${id}"><i class="fas fa-edit"></i> Editar</button>`);
+            actions.push(`<button class="btn btn-danger" data-action="delete" data-id="${id}"><i class="fas fa-trash"></i> Excluir</button>`);
+
+            return `
+                <div class="list-item" data-instance-id="${id}">
+                    <div class="list-item-info">
+                        <h4>${this._escapeHtml(instance.sessionName || '')}</h4>
+                        <p>Status: <span class="status-badge status-${this._escapeHtml(instance.status || '')}">${this._escapeHtml(statusText)}</span></p>
+                        <p>Número: ${this._escapeHtml(phone)}</p>
+                        <small>Criado em: ${this.formatDate(instance.createdAt)}</small>
+                    </div>
+                    <div class="list-item-actions">
+                        ${actions.join(' ')}
+                    </div>
                 </div>
-                <div class="list-item-actions">
-                    ${instance.status === 'connecting' ? `
-                        <button class="btn btn-info" onclick="app.whatsappManager.showQRCode('${instance._id}')">
-                            <i class="fas fa-qrcode"></i> QR Code
-                        </button>
-                    ` : ''}
-                    
-                    ${instance.status === 'connected' ? `
-                        <button class="btn btn-success" onclick="app.whatsappManager.loadGroups('${instance._id}')">
-                            <i class="fas fa-sync"></i> Carregar Grupos
-                        </button>
-                        <button class="btn btn-warning" onclick="app.whatsappManager.viewGroups('${instance._id}')">
-                            <i class="fas fa-users"></i> Ver Grupos
-                        </button>
-                    ` : ''}
-                    
-                    ${instance.status === 'connected' ? `
-                        <button class="btn btn-secondary" onclick="app.whatsappManager.disconnectInstance('${instance._id}')">
-                            <i class="fas fa-power-off"></i> Desconectar
-                        </button>
-                    ` : ''}
-                    
-                    <button class="btn btn-danger" onclick="app.whatsappManager.deleteInstance('${instance._id}')">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         this.emit('instancesRendered', instances);
+    }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- CRUD Instância --------------------------- */
+    async saveInstance() {
+        // Evitar múltiplos clicks
+        if (this.state.isSaving) {
+            console.log('Save já em andamento');
+            return;
+        }
+
+        const nameInput = document.getElementById('instanceName');
+        if (!nameInput) {
+            this.showNotification('Campo de nome não encontrado', 'error');
+            return;
+        }
+
+        const sessionName = nameInput.value.trim();
+        if (!sessionName) {
+            this.showNotification('Nome da instância é obrigatório', 'warning');
+            return;
+        }
+
+        const submitBtn = document.querySelector('#instanceForm button[type="submit"]');
+
+        try {
+            this.state.isSaving = true;
+            this.showLoading();
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.dataset.originalHtml = submitBtn.innerHTML;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Criando...';
+            }
+
+            const payload = { sessionName };
+
+            const data = await this._fetchJson('/api/whatsapp/instances', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (data && data.success) {
+                this.showNotification(data.message || 'Instância criada com sucesso!', 'success');
+
+                // Invalidar cache
+                this.state.cache.instances = null;
+                this.state.cache.lastUpdated = null;
+
+                this.closeInstanceModal();
+                await this.loadInstances(true);
+                this.emit('instanceCreated', data.instance);
+
+                if (data.instance && data.instance._id) {
+                    setTimeout(() => this.showQRCode(data.instance._id), 1500);
+                }
+            } else {
+                // Tratamento específico
+                const msg = data && data.error ? data.error : 'Erro ao criar instância';
+                if (msg.includes('duplicate key')) {
+                    throw new Error('Já existe uma instância com este nome. Escolha outro nome.');
+                }
+                throw new Error(msg);
+            }
+        } catch (error) {
+            console.error('Erro ao salvar instância:', error);
+            this.emit('error', error);
+            const userMessage = (error.message && error.message.includes('Cannot read properties of null'))
+                ? 'Erro no servidor ao criar instância. Verifique a lista.' : (error.message || 'Erro desconhecido');
+            this.showNotification(userMessage, 'error');
+        } finally {
+            this.state.isSaving = false;
+            this.hideLoading();
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = submitBtn.dataset.originalHtml || 'Criar Instância';
+                delete submitBtn.dataset.originalHtml;
+            }
+        }
+    }
+
+    async showQRCode(instanceId) {
+        if (!this.auth) return;
+        try {
+            this.showLoading();
+            const data = await this._fetchJson(`/api/whatsapp/instances/${instanceId}/qrcode`);
+
+            if (data && data.success && data.qrCode) {
+                this.openQRCodeModal(instanceId, data.qrCode);
+                this.emit('qrcodeShown', { instanceId, qrCode: data.qrCode });
+            } else {
+                throw new Error(data && data.error ? data.error : 'QR Code não disponível');
+            }
+        } catch (error) {
+            console.error('Erro ao buscar QR Code:', error);
+            this.emit('error', error);
+
+            // Mensagem mais amigável em possíveis casos de já conectado
+            if (error.message && error.message.toLowerCase().includes('já estar conectada')) {
+                this.showNotification('Instância já está conectada!', 'info');
+                this.loadInstances(true);
+            } else {
+                this.showNotification(error.message || 'Erro ao obter QR Code', 'error');
+            }
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    openQRCodeModal(instanceId, qrCode) {
+        const modal = document.getElementById('qrcodeModal');
+        const qrImage = document.getElementById('qrcodeImage');
+
+        if (!modal || !qrImage) {
+            this.showNotification('Elementos do modal de QR Code não encontrados', 'error');
+            return;
+        }
+
+        qrImage.src = qrCode;
+        qrImage.alt = 'QR Code para conectar WhatsApp';
+        modal.style.display = 'block';
+
+        this.startQRCodeCheck(instanceId);
+        this.emit('modalOpened', { type: 'qrcode', instanceId });
+    }
+
+    closeQRCodeModal() {
+        const modal = document.getElementById('qrcodeModal');
+        if (modal) modal.style.display = 'none';
+        this.stopQRCodeCheck();
+        this.emit('modalClosed', { type: 'qrcode' });
+    }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- Polling QR Code (safe) ------------------- */
+    startQRCodeCheck(instanceId) {
+        this.stopQRCodeCheck(); // cleanup anterior
+
+        this.state.qrCodeCheck.instanceId = instanceId;
+        this.state.qrCodeCheck.attempts = 0;
+
+        // Cria interval que usa _fetchJson com timeout (cada requisição aborta se demorar)
+        this.state.qrCodeCheck.intervalId = setInterval(async () => {
+            this.state.qrCodeCheck.attempts++;
+
+            try {
+                const data = await this._fetchJson(`/api/whatsapp/instances/${instanceId}`, {}, 8000);
+
+                if (data && data.success && data.instance) {
+                    const st = data.instance.status;
+                    if (st === 'connected') {
+                        this.showNotification('WhatsApp conectado com sucesso!', 'success');
+                        this.closeQRCodeModal();
+
+                        this.state.cache.instances = null;
+                        this.state.cache.lastUpdated = null;
+
+                        this.loadInstances(true);
+                        this.emit('instanceConnected', data.instance);
+                    } else if (st === 'failed') {
+                        this.showNotification('Falha ao conectar WhatsApp', 'error');
+                        this.closeQRCodeModal();
+                        this.emit('connectionFailed', data.instance);
+                    } // outros status: continuar
+                }
+
+                if (this.state.qrCodeCheck.attempts >= this.state.qrCodeCheck.maxAttempts) {
+                    this.stopQRCodeCheck();
+                    this.showNotification('Tempo esgotado para escanear QR Code', 'warning');
+                    this.emit('qrcodeTimeout', { instanceId, attempts: this.state.qrCodeCheck.attempts });
+                }
+            } catch (err) {
+                console.error('Erro ao verificar status:', err);
+                this.emit('error', err);
+                // não fechar automaticamente, apenas logar; poderia contar como tentativa
+                if (this.state.qrCodeCheck.attempts >= this.state.qrCodeCheck.maxAttempts) {
+                    this.stopQRCodeCheck();
+                }
+            }
+        }, this.state.qrCodeCheck.delayMs);
+    }
+
+    stopQRCodeCheck() {
+        if (this.state.qrCodeCheck.intervalId) {
+            clearInterval(this.state.qrCodeCheck.intervalId);
+            this.state.qrCodeCheck.intervalId = null;
+        }
+        this.state.qrCodeCheck.instanceId = null;
+        this.state.qrCodeCheck.attempts = 0;
+    }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- Grupos / Visualização -------------------- */
+    async loadGroups(instanceId) {
+        if (!confirm('Deseja carregar os grupos do WhatsApp? Isso pode levar alguns segundos.') || !this.auth) return;
+
+        try {
+            this.showLoading();
+            const data = await this._fetchJson(`/api/whatsapp/instances/${instanceId}/load-groups`, { method: 'POST' }, 20000);
+
+            if (data && data.success) {
+                this.showNotification(`${data.groupCount} grupos carregados com sucesso!`, 'success');
+                this.emit('groupsLoaded', { instanceId, groupCount: data.groupCount });
+
+                if (window.app && app.contactGroups) {
+                    app.contactGroups.loadGroups();
+                }
+            } else {
+                throw new Error(data && data.error ? data.error : 'Erro ao carregar grupos');
+            }
+        } catch (err) {
+            console.error('Erro loadGroups:', err);
+            this.emit('error', err);
+            this.showNotification(err.message || 'Erro desconhecido', 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async viewGroups(instanceId) {
+        try {
+            this.showLoading();
+            const data = await this._fetchJson(`/api/whatsapp/instances/${instanceId}/groups`, {}, 10000);
+
+            if (data && data.success) {
+                this.showGroupsModal(data.groups);
+                this.emit('groupsViewed', { instanceId, groups: data.groups });
+            } else {
+                throw new Error(data && data.error ? data.error : 'Erro ao carregar grupos');
+            }
+        } catch (err) {
+            console.error('Erro viewGroups:', err);
+            this.emit('error', err);
+            this.showNotification(err.message || 'Erro desconhecido', 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    showGroupsModal(groups) {
+        const modal = document.getElementById('groupsModal');
+        const container = document.getElementById('whatsappGroupsList');
+
+        if (!modal || !container) {
+            this.showNotification('Elementos do modal de grupos não encontrados', 'error');
+            return;
+        }
+
+        if (!groups || groups.length === 0) {
+            container.innerHTML = '<p>Nenhum grupo encontrado no WhatsApp.</p>';
+        } else {
+            container.innerHTML = groups.map(group => `
+                <div class="group-item">
+                    <h4>${this._escapeHtml(group.name || '')}</h4>
+                    <p>${group.contactCount || 0} participantes</p>
+                    <div class="group-participants">
+                        ${group.contacts ? group.contacts.slice(0, 5).map(c => `<span class="participant">${this._escapeHtml(c.name || 'Sem nome')}</span>`).join('') : ''}
+                        ${group.contactCount > 5 ? `<span>+${group.contactCount - 5} mais</span>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        modal.style.display = 'block';
+        this.emit('modalOpened', { type: 'groups', groups });
+    }
+
+    closeGroupsModal() {
+        const modal = document.getElementById('groupsModal');
+        if (modal) modal.style.display = 'none';
+        this.emit('modalClosed', { type: 'groups' });
+    }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- Disconnect / Delete --------------------- */
+    async disconnectInstance(instanceId) {
+        if (!confirm('Tem certeza que deseja desconectar esta instância?') || !this.auth) return;
+
+        try {
+            this.showLoading();
+            const data = await this._fetchJson(`/api/whatsapp/instances/${instanceId}/disconnect`, { method: 'PUT' }, 10000);
+
+            if (data && data.success) {
+                this.showNotification('Instância desconectada com sucesso!', 'success');
+                this.state.cache.instances = null;
+                this.state.cache.lastUpdated = null;
+                await this.loadInstances(true);
+                this.emit('instanceDisconnected', { instanceId });
+            } else {
+                throw new Error(data && data.error ? data.error : 'Erro ao desconectar instância');
+            }
+        } catch (err) {
+            console.error('Erro disconnectInstance:', err);
+            this.emit('error', err);
+            this.showNotification(err.message || 'Erro desconhecido', 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+
+    async deleteInstance(instanceId) {
+        if (!confirm('Tem certeza que deseja excluir esta instância? Isso irá remover todas as credenciais e você precisará escanear o QR code novamente.') || !this.auth) return;
+
+        try {
+            this.showLoading();
+
+            // Buscar instância para obter sessionName (backend antigo exigia sessionName)
+            const instanceData = await this._fetchJson(`/api/whatsapp/instances/${instanceId}`, {}, 10000);
+            if (!instanceData || !instanceData.success || !instanceData.instance) {
+                throw new Error(instanceData && instanceData.error ? instanceData.error : 'Erro ao buscar instância');
+            }
+
+            const sessionName = instanceData.instance.sessionName;
+
+            // Preferência: se backend aceitar delete por _id, usar `instanceId`. 
+            // Aqui usa sessionName por compatibilidade com seu código original.
+            const response = await this._fetchJson(`/api/whatsapp/instances/${sessionName}`, { method: 'DELETE' }, 10000);
+
+            if (response && response.success) {
+                this.showNotification('Instância excluída com sucesso!', 'success');
+                this.state.cache.instances = null;
+                this.state.cache.lastUpdated = null;
+                await this.loadInstances(true);
+                this.emit('instanceDeleted', { instanceId, sessionName });
+            } else {
+                throw new Error(response && response.error ? response.error : 'Erro ao excluir instância');
+            }
+        } catch (err) {
+            console.error('Erro deleteInstance:', err);
+            this.emit('error', err);
+            this.showNotification(err.message || 'Erro desconhecido', 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- Utilitários / UI ------------------------- */
+    getInstance(instanceId) {
+        return this.state.instances.find(inst => inst._id === instanceId);
+    }
+
+    getConnectedInstances() {
+        return this.state.instances.filter(inst => inst.status === 'connected');
     }
 
     getStatusText(status) {
@@ -888,484 +1333,20 @@ class WhatsAppManager {
     }
 
     formatDate(dateString) {
-        return new Date(dateString).toLocaleDateString('pt-BR');
-    }
-
-    openInstanceModal(instance = null) {
-        console.log('openInstanceModal called', { instance });
-
-        this.state.currentInstance = instance;
-        const modal = document.getElementById('instanceModal');
-        const title = document.getElementById('instanceModalTitle');
-
-        console.log('Modal elements:', { modal, title });
-
-        if (!modal || !title) {
-            console.error('Modal elements not found!');
-            return;
-        }
-
-        if (instance) {
-            title.textContent = 'Editar Instância';
-            this.populateInstanceForm(instance);
-        } else {
-            title.textContent = 'Nova Instância WhatsApp';
-            this.clearInstanceForm();
-        }
-
-        modal.style.display = 'block';
-        console.log('Modal should be visible now');
-
-        this.emit('modalOpened', { type: 'instance', instance });
-    }
-
-    closeInstanceModal() {
-        const modal = document.getElementById('instanceModal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        this.state.currentInstance = null;
-        this.emit('modalClosed', { type: 'instance' });
-    }
-
-    populateInstanceForm(instance) {
-        const nameInput = document.getElementById('instanceName');
-        if (nameInput) {
-            nameInput.value = instance.sessionName;
-        }
-    }
-
-    clearInstanceForm() {
-        const form = document.getElementById('instanceForm');
-        if (form) {
-            form.reset();
-        }
-    }
-
-    // No arquivo app.js - WhatsAppManager class
-
-    // No WhatsAppManager class - adicionar estado de loading
-    async saveInstance() {
-        console.log('saveInstance called');
-
-        // ✅ PREVENIR MÚLTIPLOS CLICKS
-        if (this.state.isSaving) {
-            console.log('⚠️ Save já em andamento, ignorando clique');
-            return;
-        }
-
-        const nameInput = document.getElementById('instanceName');
-        if (!nameInput || !this.auth) {
-            console.error('Auth manager or input not available');
-            return;
-        }
-
-        const sessionName = nameInput.value.trim();
-        console.log('Session name:', sessionName);
-
-        if (!sessionName) {
-            this.showNotification('Nome da instância é obrigatório', 'warning');
-            return;
-        }
-
+        if (!dateString) return '';
         try {
-            // ✅ BLOQUEAR NOVOS CLICKS
-            this.state.isSaving = true;
-            this.showLoading();
-
-            // ✅ DESABILITAR BOTÃO ENQUANTO SALVA
-            const submitBtn = document.querySelector('#instanceForm button[type="submit"]');
-            if (submitBtn) {
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Criando...';
-            }
-
-            const response = await fetch('/api/whatsapp/instances', {
-                method: 'POST',
-                headers: this.getAuthHeaders(),
-                body: JSON.stringify({ sessionName })
-            });
-
-            const data = await response.json();
-            console.log('API response:', data);
-
-            if (data.success) {
-                this.showNotification(
-                    data.message || 'Instância criada com sucesso!',
-                    'success'
-                );
-
-                this.state.cache.instances = null;
-                this.state.cache.lastUpdated = null;
-
-                this.closeInstanceModal();
-                this.loadInstances(true);
-
-                this.emit('instanceCreated', data.instance);
-
-                // ✅ VERIFICAÇÃO SEGURA PARA QR CODE
-                if (data.instance && data.instance._id) {
-                    console.log('Instância criada com ID:', data.instance._id);
-
-                    // Pequeno delay para garantir processamento
-                    setTimeout(() => {
-                        this.showQRCode(data.instance._id);
-                    }, 1500);
-                }
-            } else {
-                // ✅ TRATAMENTO ESPECÍFICO PARA DUPLICATE KEY
-                if (data.error && data.error.includes('duplicate key')) {
-                    throw new Error('Já existe uma instância com este nome. Por favor, escolha outro nome.');
-                } else {
-                    throw new Error(data.error || 'Erro ao criar instância');
-                }
-            }
-        } catch (error) {
-            console.error('Erro ao salvar instância:', error);
-            this.emit('error', error);
-
-            // ✅ MENSAGEM MAIS AMIGÁVEL
-            let userMessage = error.message;
-            if (error.message.includes('Cannot read properties of null')) {
-                userMessage = 'Erro no servidor ao criar instância. A instância pode ter sido criada parcialmente. Verifique a lista.';
-            }
-
-            this.showNotification(userMessage, 'error');
-        } finally {
-            // ✅ RESTAURAR ESTADO
-            this.state.isSaving = false;
-            this.hideLoading();
-
-            // ✅ REABILITAR BOTÃO
-            const submitBtn = document.querySelector('#instanceForm button[type="submit"]');
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = 'Criar Instância';
-            }
+            return new Date(dateString).toLocaleDateString('pt-BR');
+        } catch (e) {
+            return dateString;
         }
     }
 
-    // No arquivo app.js - WhatsAppManager class
-
-    async showQRCode(instanceId) {
-        try {
-            if (!this.auth) return;
-
-            this.auth.showLoading();
-            const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
-                headers: this.auth.getAuthHeaders()
-            });
-
-            const data = await response.json();
-
-            if (data.success && data.qrCode) {
-                this.openQRCodeModal(instanceId, data.qrCode);
-                this.emit('qrcodeShown', { instanceId, qrCode: data.qrCode });
-            } else {
-                throw new Error(data.error || 'QR Code não disponível');
-            }
-        } catch (error) {
-            console.error('Erro ao buscar QR Code:', error);
-            this.emit('error', error);
-
-            // ✅ CORREÇÃO: Mensagem mais específica
-            if (error.message.includes('já estar conectada')) {
-                this.auth.showNotification('Instância já está conectada!', 'info');
-                this.loadInstances(true); // Recarregar status
-            } else {
-                this.auth.showNotification(error.message, 'error');
-            }
-        } finally {
-            this.auth.hideLoading();
-        }
-    }
-
-    openQRCodeModal(instanceId, qrCode) {
-        const modal = document.getElementById('qrcodeModal');
-        const qrImage = document.getElementById('qrcodeImage');
-
-        if (!modal || !qrImage) {
-            this.auth.showNotification('Elementos do modal de QR Code não encontrados', 'error');
-            return;
-        }
-
-        qrImage.src = qrCode;
-        qrImage.alt = 'QR Code para conectar WhatsApp';
-
-        modal.style.display = 'block';
-
-        this.startQRCodeCheck(instanceId);
-        this.emit('modalOpened', { type: 'qrcode', instanceId });
-    }
-
-    closeQRCodeModal() {
-        const modal = document.getElementById('qrcodeModal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        this.stopQRCodeCheck();
-        this.emit('modalClosed', { type: 'qrcode' });
-    }
-
-    startQRCodeCheck(instanceId) {
-        this.stopQRCodeCheck(); // Cleanup anterior
-
-        this.state.qrCodeCheck.instanceId = instanceId;
-        this.state.qrCodeCheck.attempts = 0;
-
-        this.state.qrCodeCheck.interval = setInterval(async () => {
-            try {
-                this.state.qrCodeCheck.attempts++;
-
-                const response = await fetch(`/api/whatsapp/instances/${instanceId}`, {
-                    headers: this.auth.getAuthHeaders()
-                });
-
-                const data = await response.json();
-
-                if (data.success && data.instance) {
-                    if (data.instance.status === 'connected') {
-                        this.auth.showNotification('WhatsApp conectado com sucesso!', 'success');
-                        this.closeQRCodeModal();
-
-                        // Invalidar cache
-                        this.state.cache.instances = null;
-                        this.state.cache.lastUpdated = null;
-
-                        this.loadInstances(true); // Force refresh
-                        this.emit('instanceConnected', data.instance);
-                    } else if (data.instance.status === 'failed') {
-                        this.auth.showNotification('Falha ao conectar WhatsApp', 'error');
-                        this.closeQRCodeModal();
-                        this.emit('connectionFailed', data.instance);
-                    }
-                }
-
-                // Timeout após máximo de tentativas
-                if (this.state.qrCodeCheck.attempts >= this.state.qrCodeCheck.maxAttempts) {
-                    this.stopQRCodeCheck();
-                    this.auth.showNotification('Tempo esgotado para escanear QR Code', 'warning');
-                    this.emit('qrcodeTimeout', { instanceId, attempts: this.state.qrCodeCheck.attempts });
-                }
-
-            } catch (error) {
-                console.error('Erro ao verificar status:', error);
-                this.emit('error', error);
-            }
-        }, 3000);
-    }
-
-    stopQRCodeCheck() {
-        if (this.state.qrCodeCheck.interval) {
-            clearInterval(this.state.qrCodeCheck.interval);
-            this.state.qrCodeCheck.interval = null;
-            this.state.qrCodeCheck.instanceId = null;
-            this.state.qrCodeCheck.attempts = 0;
-        }
-    }
-
-    async loadGroups(instanceId) {
-        if (!confirm('Deseja carregar os grupos do WhatsApp? Isso pode levar alguns segundos.') || !this.auth) {
-            return;
-        }
-
-        try {
-            this.auth.showLoading();
-            const response = await fetch(`/api/whatsapp/instances/${instanceId}/load-groups`, {
-                method: 'POST',
-                headers: this.auth.getAuthHeaders()
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.auth.showNotification(`${data.groupCount} grupos carregados com sucesso!`, 'success');
-                this.emit('groupsLoaded', { instanceId, groupCount: data.groupCount });
-
-                if (app && app.contactGroups) {
-                    app.contactGroups.loadGroups();
-                }
-            } else {
-                throw new Error(data.error || 'Erro ao carregar grupos');
-            }
-        } catch (error) {
-            this.emit('error', error);
-            this.auth.showNotification(error.message, 'error');
-        } finally {
-            this.auth.hideLoading();
-        }
-    }
-
-    async viewGroups(instanceId) {
-        try {
-            if (!this.auth) return;
-
-            this.auth.showLoading();
-            const response = await fetch(`/api/whatsapp/instances/${instanceId}/groups`, {
-                headers: this.auth.getAuthHeaders()
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showGroupsModal(data.groups);
-                this.emit('groupsViewed', { instanceId, groups: data.groups });
-            } else {
-                throw new Error(data.error || 'Erro ao carregar grupos');
-            }
-        } catch (error) {
-            this.emit('error', error);
-            this.auth.showNotification(error.message, 'error');
-        } finally {
-            this.auth.hideLoading();
-        }
-    }
-
-    showGroupsModal(groups) {
-        const modal = document.getElementById('groupsModal');
-        const container = document.getElementById('whatsappGroupsList');
-
-        if (!modal || !container) {
-            this.auth.showNotification('Elementos do modal de grupos não encontrados', 'error');
-            return;
-        }
-
-        if (!groups || groups.length === 0) {
-            container.innerHTML = '<p>Nenhum grupo encontrado no WhatsApp.</p>';
-        } else {
-            container.innerHTML = groups.map(group => `
-                <div class="group-item">
-                    <h4>${group.name}</h4>
-                    <p>${group.contactCount || 0} participantes</p>
-                    <div class="group-participants">
-                        ${group.contacts ? group.contacts.slice(0, 5).map(contact => `
-                            <span class="participant">${contact.name || 'Sem nome'}</span>
-                        `).join('') : ''}
-                        ${group.contactCount > 5 ? `<span>+${group.contactCount - 5} mais</span>` : ''}
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        modal.style.display = 'block';
-        this.emit('modalOpened', { type: 'groups', groups });
-    }
-
-    closeGroupsModal() {
-        const modal = document.getElementById('groupsModal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        this.emit('modalClosed', { type: 'groups' });
-    }
-
-    // No arquivo app.js - WhatsAppManager class
-
-    async disconnectInstance(instanceId) {
-        if (!confirm('Tem certeza que deseja desconectar esta instância?') || !this.auth) {
-            return;
-        }
-
-        try {
-            this.auth.showLoading();
-
-            // ✅ CORREÇÃO: Usar :id na rota de disconnect (conforme suas rotas)
-            const response = await fetch(`/api/whatsapp/instances/${instanceId}/disconnect`, {
-                method: 'PUT',
-                headers: this.auth.getAuthHeaders()
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.auth.showNotification('Instância desconectada com sucesso!', 'success');
-
-                // Invalidar cache
-                this.state.cache.instances = null;
-                this.state.cache.lastUpdated = null;
-
-                this.loadInstances(true); // Force refresh
-                this.emit('instanceDisconnected', { instanceId });
-            } else {
-                throw new Error(data.error || 'Erro ao desconectar instância');
-            }
-        } catch (error) {
-            this.emit('error', error);
-            this.auth.showNotification(error.message, 'error');
-        } finally {
-            this.auth.hideLoading();
-        }
-    }
-
-    // No arquivo app.js - WhatsAppManager class
-
-    async deleteInstance(instanceId) {
-        if (!confirm('Tem certeza que deseja excluir esta instância? Isso irá remover todas as credenciais e você precisará escanear o QR code novamente.') || !this.auth) {
-            return;
-        }
-
-        try {
-            this.auth.showLoading();
-
-            // PRIMEIRO: Buscar a instância para obter o sessionName
-            const instanceResponse = await fetch(`/api/whatsapp/instances/${instanceId}`, {
-                headers: this.auth.getAuthHeaders()
-            });
-
-            const instanceData = await instanceResponse.json();
-
-            if (!instanceData.success) {
-                throw new Error(instanceData.error || 'Erro ao buscar instância');
-            }
-
-            const sessionName = instanceData.instance.sessionName;
-            console.log('Deletando instância:', sessionName);
-
-            // ✅ CORREÇÃO: Usar sessionName na URL de delete
-            const response = await fetch(`/api/whatsapp/instances/${sessionName}`, {
-                method: 'DELETE',
-                headers: this.auth.getAuthHeaders()
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.auth.showNotification('Instância excluída com sucesso!', 'success');
-
-                // Invalidar cache
-                this.state.cache.instances = null;
-                this.state.cache.lastUpdated = null;
-
-                this.loadInstances(true); // Force refresh
-                this.emit('instanceDeleted', { instanceId, sessionName });
-            } else {
-                throw new Error(data.error || 'Erro ao excluir instância');
-            }
-        } catch (error) {
-            this.emit('error', error);
-            this.auth.showNotification(error.message, 'error');
-        } finally {
-            this.auth.hideLoading();
-        }
-    }
-
-    // Métodos utilitários para gerenciamento de estado
-    getInstance(instanceId) {
-        console.log("get instancia")
-        return this.state.instances.find(inst => inst._id === instanceId);
-    }
-
-    getConnectedInstances() {
-        return this.state.instances.filter(inst => inst.status === 'connected');
-    }
-
-    showNotification(message, type) {
+    showNotification(message, type = 'info') {
         if (this.auth && typeof this.auth.showNotification === 'function') {
             this.auth.showNotification(message, type);
         } else if (typeof authInstance !== 'undefined' && authInstance.showNotification) {
             authInstance.showNotification(message, type);
         } else {
-            // Fallback básico
             alert(`${type.toUpperCase()}: ${message}`);
         }
     }
@@ -1397,12 +1378,78 @@ class WhatsAppManager {
         }
     }
 
-    // Cleanup para evitar memory leaks
+    openInstanceModal(instance = null) {
+        this.state.currentInstance = instance;
+        const modal = document.getElementById('instanceModal');
+        const title = document.getElementById('instanceModalTitle');
+
+        if (!modal || !title) {
+            console.error('Modal elements not found');
+            return;
+        }
+
+        if (instance) {
+            title.textContent = 'Editar Instância';
+            this.populateInstanceForm(instance);
+        } else {
+            title.textContent = 'Nova Instância WhatsApp';
+            this.clearInstanceForm();
+        }
+
+        modal.style.display = 'block';
+        this.emit('modalOpened', { type: 'instance', instance });
+    }
+
+    closeInstanceModal() {
+        const modal = document.getElementById('instanceModal');
+        if (modal) modal.style.display = 'none';
+        this.state.currentInstance = null;
+        this.emit('modalClosed', { type: 'instance' });
+    }
+
+    populateInstanceForm(instance) {
+        const nameInput = document.getElementById('instanceName');
+        if (nameInput) nameInput.value = instance.sessionName || '';
+    }
+
+    clearInstanceForm() {
+        const form = document.getElementById('instanceForm');
+        if (form) form.reset();
+    }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- Cleanup / Destroy ----------------------- */
+    closeAllModals() {
+        document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+        this.stopQRCodeCheck();
+    }
+
     destroy() {
         this.stopQRCodeCheck();
+        // remover event listeners adicionados com bind
+        document.removeEventListener('click', this._bound.documentClick);
+        document.removeEventListener('keydown', this._bound.keydown);
+        window.removeEventListener('click', this._bound.windowClick);
+
+        const instancesList = document.getElementById('instancesList');
+        if (instancesList) instancesList.removeEventListener('click', this._bound.instanceListClick);
+
         this.eventHandlers = {};
     }
+    /* ----------------------------------------------------------------- */
+
+    /* ---------------------- Helpers pequenos ------------------------- */
+    _escapeHtml(str = '') {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+    /* ----------------------------------------------------------------- */
 }
+
 
 // Atualize a classe Batches no app.js - SUBSTITUA A CLASSE EXISTENTE:
 
@@ -2176,10 +2223,16 @@ class App {
                     console.log('Loading WhatsApp instances...');
                     this.whatsappManager.loadInstances();
 
+                    // ✅ NOVO: Garantir que o botão seja atualizado
+                    setTimeout(() => {
+                        this.whatsappManager.updateAddInstanceButton();
+                    }, 200);
+
                     // Re-configurar event listeners para garantir que funcionam
                     setTimeout(() => {
                         this.whatsappManager.setupEventListeners();
                     }, 100);
+
                 } else {
                     console.warn('WhatsAppManager not available, retrying...');
                     // Tentar inicializar se não estiver disponível

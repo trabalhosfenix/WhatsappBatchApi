@@ -4,15 +4,20 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-const mongoose = require('mongoose'); // ✅ ADICIONAR
-const mediaBatchRoutes = require('./routes/mediaBatches');
-const messageControlRoutes = require('./routes/messageControl');
-const adminRoutes = require('./routes/admin');
+const mongoose = require('mongoose');
 
+// ✅ CORREÇÃO: Importar com .js
+const authRoutes = require('./routes/auth.js');
+const batchRoutes = require('./routes/batches.js');
+const contactGroupRoutes = require('./routes/contactGroups.js');
+const whatsappRoutes = require('./routes/whatsapp.js');
+const mediaBatchRoutes = require('./routes/mediaBatches.js');
+const messageControlRoutes = require('./routes/messageControl.js');
+const adminRoutes = require('./routes/admin.js');
+const tarefasRoutes = require('./routes/tarefas.js');
+const participantRoutes = require('./routes/participants.js');
 
-
-// ✅ CORREÇÃO: Remover import do connectDB e conectar diretamente
-// Conectar ao MongoDB
+// ✅ CORREÇÃO: Conectar ao MongoDB
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/whatsapp-batch-api';
 mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
@@ -21,15 +26,6 @@ mongoose.connect(MONGODB_URI, {
   .then(() => console.log('✅ Conectado ao MongoDB'))
   .catch(err => console.error('❌ Erro ao conectar MongoDB:', err));
 
-
-
-// Importar rotas
-
-const authRoutes = require('./routes/auth');
-const batchRoutes = require('./routes/batches');
-const contactGroupRoutes = require('./routes/contactGroups');
-const whatsappRoutes = require('./routes/whatsapp');
-
 const app = express();
 
 // Middlewares de segurança
@@ -37,29 +33,25 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 
-
+// ✅ CORREÇÃO: CORS configurado corretamente
 const allowedOrigins = (process.env.CORS_ORIGIN || '*')
   .split(',')
   .map(o => o.trim());
 
-
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // Postman / server requests
-
-      if (allowedOrigins.includes(origin)) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
         return callback(null, true);
       } else {
         console.warn(`❌ CORS bloqueado: ${origin}`);
-        return callback(null, true); // permite continuar, só loga
+        return callback(new Error('Not allowed by CORS'), false);
       }
     },
     credentials: true,
   })
 );
-
-
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -70,10 +62,6 @@ app.use(express.static(path.join(__dirname, '../public')));
 // Adicione na seção de rotas:
 app.use('/api/media', mediaBatchRoutes);
 
-// Servir arquivos de mídia estáticos (se necessário)
-app.use('/media', express.static(path.join(__dirname, 'uploads/media')));
-
-app.use('/api/message-control', messageControlRoutes);
 
 
 
@@ -87,22 +75,28 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Rotas da API
+// ✅ CORREÇÃO: Registrar TODAS as rotas ANTES dos handlers gerais
 app.use('/api/auth', authRoutes);
 app.use('/api/batches', batchRoutes);
 app.use('/api/contact-groups', contactGroupRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/media', mediaBatchRoutes);
+app.use('/api/message-control', messageControlRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/tarefas', tarefasRoutes); // ✅ CORREÇÃO: caminho correto
+app.use('/api/participants', participantRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
   });
 });
 
-// Rota para a interface web (se existir)
+// Rota para a interface web
 app.get('/', (req, res) => {
   res.json({
     message: 'WhatsApp Batch API',
@@ -111,17 +105,21 @@ app.get('/', (req, res) => {
       auth: '/api/auth',
       batches: '/api/batches',
       contactGroups: '/api/contact-groups',
-      whatsapp: '/api/whatsapp'
+      whatsapp: '/api/whatsapp',
+      media: '/api/media',
+      messageControl: '/api/message-control',
+      admin: '/api/admin',
+      tarefas: '/api/tarefas'
     }
   });
 });
 
-// Servir admin.html
+// ✅ CORREÇÃO: Rota admin ANTES do 404
 app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/admin.html'));
+  res.sendFile(path.join(__dirname, 'public/admin.html'));
 });
 
-// Rota não encontrada
+// ✅ CORREÇÃO: Rota não encontrada - DEVE SER O ÚLTIMO MIDDLEWARE ANTES DO ERROR HANDLER
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
@@ -129,12 +127,18 @@ app.use('*', (req, res) => {
   });
 });
 
-app.use('/api/admin', adminRoutes);
-
-
-// Error handling
+// ✅ CORREÇÃO: Error handling - DEVE SER O ÚLTIMO MIDDLEWARE
 app.use((error, req, res, next) => {
   console.error('❌ Erro:', error.stack);
+  
+  // ✅ CORREÇÃO: Tratar erros de CORS
+  if (error.message === 'Not allowed by CORS') {
+    return res.status(403).json({
+      success: false,
+      error: 'Acesso não permitido por CORS'
+    });
+  }
+  
   res.status(500).json({
     success: false,
     error: 'Erro interno do servidor',

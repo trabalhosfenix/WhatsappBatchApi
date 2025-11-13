@@ -21,7 +21,7 @@ class MessageControlService {
             // Criar listener para mensagens
             const messageListener = async ({ messages, type }) => {
                 const msg = messages[0];
-                if (!msg.message || !msg.key.id) return;
+                // if (!msg.message || !msg.key.id) return;
 
                 const uniqueId = `${msg.key.remoteJid}_${msg.key.id}_${type}`;
                 

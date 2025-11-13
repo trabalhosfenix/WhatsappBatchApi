@@ -2261,3 +2261,72 @@ select option {
     padding: 10px;
     color: #dc3545;
 }
+
+/* 📁 css/style.css - ESTILOS PARA LEMBRETES GLOBAIS */
+.popup-lembrete-global {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    z-index: 9999;
+    max-width: 400px;
+    min-width: 350px;
+    border-left: 4px solid #ff9800;
+    animation: slideInRight 0.3s ease;
+}
+
+.popup-lembrete-global.priority-urgente {
+    border-left-color: #ad1457;
+    background: #fff5f8;
+}
+
+.popup-lembrete-global.priority-alta {
+    border-left-color: #c62828;
+    background: #fff5f5;
+}
+
+.popup-lembrete-global.priority-media {
+    border-left-color: #ef6c00;
+}
+
+.popup-lembrete-global.priority-baixa {
+    border-left-color: #2e7d32;
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes piscar {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+.piscando {
+    animation: piscar 1s ease-in-out;
+}
+
+.popup-header {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    border-radius: 8px 8px 0 0;
+}
+
+.popup-content {
+    padding: 15px;
+}
+
+.popup-actions {
+    padding: 15px;
+    border-top: 1px solid #eee;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}

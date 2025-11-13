@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tarefas & Lembretes - WhatsApp Batch Manager</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Lato:wght@300;400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        .priority-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .priority-baixa {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .priority-media {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+
+        .priority-alta {
+            background: #ffe0e0;
+            color: #c62828;
+        }
+
+        .priority-urgente {
+            background: #fce4ec;
+            color: #ad1457;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .status-pendente {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+
+        .status-em_andamento {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .status-concluida {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .status-cancelada {
+            background: #f5f5f5;
+            color: #757575;
+        }
+
+        .tarefa-card {
+            border-left: 4px solid #ddd;
+            transition: all 0.3s ease;
+        }
+
+        .tarefa-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .tarefa-card.priority-urgente {
+            border-left-color: #ad1457;
+        }
+
+        .tarefa-card.priority-alta {
+            border-left-color: #c62828;
+        }
+
+        .tarefa-card.priority-media {
+            border-left-color: #ef6c00;
+        }
+
+        .tarefa-card.priority-baixa {
+            border-left-color: #2e7d32;
+        }
+
+        .filtros-rapidos {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filtro-rapido {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .filtro-rapido.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .contador-tarefas {
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .popup-lembrete {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            max-width: 400px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .popup-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .popup-content {
+            padding: 15px;
+        }
+
+        .popup-actions {
+            padding: 15px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .list-item-info {
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <header class="header">
+        <div class="container">
+            <h1><i class="fab fa-whatsapp"></i> WhatsApp Batch Manager</h1>
+            <nav class="nav">
+                <button id="logoutBtn" class="btn btn-secondary">
+                    <i class="fas fa-sign-out-alt"></i> Sair
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <section class="section active">
+        <div class="container">
+            <div class="sidebar">
+                <div class="user-info">
+                    <h3 id="userName"></h3>
+                    <p id="userEmail"></p>
+                </div>
+
+                <nav class="sidebar-nav">
+                    <button class="nav-btn" onclick="window.location.href='agenda.html'">
+                        <i class="fas fa-address-book"></i> Agenda de Contatos
+                    </button>
+                    <button class="nav-btn" onclick="window.location.href='index.html'">
+                        <i class="fas fa-users"></i> Grupos de Contatos
+                    </button>
+                    <button class="nav-btn" onclick="window.location.href='index.html'">
+                        <i class="fab fa-whatsapp"></i> Instâncias WhatsApp
+                    </button>
+                    <button class="nav-btn" onclick="window.location.href='index.html'">
+                        <i class="fas fa-paper-plane"></i> Envios em Lote
+                    </button>
+                    <button class="nav-btn" onclick="window.location.href='media-batches.html'">
+                        <i class="fas fa-photo-video"></i> Envios de Mídia
+                    </button>
+                    <button class="nav-btn active">
+                        <i class="fas fa-tasks"></i> Tarefas & Lembretes
+                    </button>
+                </nav>
+            </div>
+
+            <div class="main-content">
+                <div class="content-section active">
+                    <div class="section-header">
+                        <h2><i class="fas fa-tasks"></i> Tarefas & Lembretes</h2>
+                        <button class="btn btn-primary" id="addTarefaBtn">
+                            <i class="fas fa-plus"></i> Nova Tarefa
+                        </button>
+                    </div>
+
+                    <!-- Filtros Rápidos -->
+                    <div class="filtros-rapidos">
+                        <div class="filtro-rapido active" data-filtro="todas">Todas</div>
+                        <div class="filtro-rapido" data-filtro="hoje">Hoje</div>
+                        <div class="filtro-rapido" data-filtro="pendentes">Pendentes</div>
+                        <div class="filtro-rapido" data-filtro="alta">Prioridade Alta</div>
+                        <div class="filtro-rapido" data-filtro="lembretes">Lembretes</div>
+                    </div>
+
+                    <!-- Contador de Tarefas -->
+                    <div class="contador-tarefas">
+                        <strong id="contadorTotal">0</strong> tarefas |
+                        <span class="status-pendente" id="contadorPendentes">0 pendentes</span> |
+                        <span class="status-em_andamento" id="contadorAndamento">0 em andamento</span> |
+                        <span class="status-concluida" id="contadorConcluidas">0 concluídas</span>
+                    </div>
+
+                    <!-- Lista de Tarefas -->
+                    <div class="card">
+                        <div class="card-header">
+                            <input type="text" id="searchTarefas" placeholder="Buscar tarefas..." class="form-control">
+                            <div style="display: flex; gap: 10px;">
+                                <select id="filterStatus" class="form-control" style="width: auto;">
+                                    <option value="">Todos status</option>
+                                    <option value="pendente">Pendente</option>
+                                    <option value="em_andamento">Em Andamento</option>
+                                    <option value="concluida">Concluída</option>
+                                    <option value="cancelada">Cancelada</option>
+                                </select>
+                                <select id="filterPrioridade" class="form-control" style="width: auto;">
+                                    <option value="">Todas prioridades</option>
+                                    <option value="baixa">Baixa</option>
+                                    <option value="media">Média</option>
+                                    <option value="alta">Alta</option>
+                                    <option value="urgente">Urgente</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="tarefasList" class="list-container"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Modal Tarefa -->
+    <div id="tarefaModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close">&times;</span>
+            <h3 id="modalTarefaTitle">Nova Tarefa</h3>
+            <form id="tarefaForm">
+                <div class="form-group">
+                    <label for="tarefaTitulo">Título *</label>
+                    <input type="text" id="tarefaTitulo" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="tarefaDescricao">Descrição</label>
+                    <textarea id="tarefaDescricao" rows="3" placeholder="Detalhes da tarefa..."></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="tarefaTipo">Tipo</label>
+                        <select id="tarefaTipo">
+                            <option value="tarefa">Tarefa</option>
+                            <option value="lembrete">Lembrete</option>
+                            <option value="evento">Evento</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tarefaPrioridade">Prioridade</label>
+                        <select id="tarefaPrioridade">
+                            <option value="baixa">Baixa</option>
+                            <option value="media" selected>Média</option>
+                            <option value="alta">Alta</option>
+                            <option value="urgente">Urgente</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="tarefaDataHora">Data e Hora *</label>
+                        <input type="datetime-local" id="tarefaDataHora" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tarefaNotificar">Notificar (minutos antes)</label>
+                        <input type="number" id="tarefaNotificar" value="15" min="0" max="1440">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="tarefaRepetir">Repetir</label>
+                        <select id="tarefaRepetir">
+                            <option value="nenhuma">Não repetir</option>
+                            <option value="diariamente">Diariamente</option>
+                            <option value="semanalmente">Semanalmente</option>
+                            <option value="mensalmente">Mensalmente</option>
+                            <option value="anualmente">Anualmente</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tarefaCategoria">Categoria</label>
+                        <input type="text" id="tarefaCategoria" placeholder="Ex: Trabalho, Pessoal...">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="tarefaTags">Tags (separadas por vírgula)</label>
+                    <input type="text" id="tarefaTags" placeholder="Ex: importante, reunião, projeto">
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary"
+                        onclick="tarefasManager.fecharModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Tarefa</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Popup de Lembrete -->
+    <div id="popupLembrete" class="popup-lembrete" style="display: none;">
+        <div class="popup-header">
+            <h4><i class="fas fa-bell"></i> Lembrete</h4>
+            <button class="btn btn-sm btn-secondary" onclick="tarefasManager.fecharPopup()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="popup-content">
+            <h5 id="popupTitulo"></h5>
+            <p id="popupDescricao"></p>
+            <small id="popupDataHora"></small>
+        </div>
+        <div class="popup-actions">
+            <button class="btn btn-secondary" onclick="tarefasManager.adiarLembrete()">
+                <i class="fas fa-clock"></i> Adiar 5min
+            </button>
+            <button class="btn btn-primary" onclick="tarefasManager.marcarComoVisto()">
+                <i class="fas fa-check"></i> Entendi
+            </button>
+        </div>
+    </div>
+
+    <script src="js/security.js"></script>
+    <script src="js/state-manager.js"></script>
+    <script src="js/theme-manager.js"></script>
+    <script src="js/tarefas.js"></script>
+    
+    <!-- <script src="js/lembretes.js"></script> -->
+</body>
+
+</html>

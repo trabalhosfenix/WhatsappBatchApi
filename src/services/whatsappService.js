@@ -7,12 +7,14 @@ const {
     Browsers,
     delay
 } = require('@whiskeysockets/baileys');
+const MessageTracker = require('../services/MessageTracker.js')
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const ContactGroup = require('../models/ContactGroup');
 const qrcode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
 const { handleMessage } = require("../controllers/messageController.js")
+const Participant = require('../models/Participants.js'); // ajuste o caminho conforme sua estrutura
 
 // Logger silencioso como no bot que funciona
 const baileysLogger = {
@@ -141,6 +143,7 @@ class WhatsAppService {
     }
 
     async initializeClient(sessionName, userId, instanceId) {
+
         // Evitar inicializações duplicadas
         if (this.initializingInstances.has(sessionName)) {
             console.log(`⚠️ [${sessionName}] Já está sendo inicializada, ignorando...`);
@@ -213,6 +216,7 @@ class WhatsAppService {
             // ✅ SALVAR CREDENCIS CORRETAMENTE
             socket.ev.on('creds.update', saveCreds);
 
+            socket.ev.on("messages.upsert", this.handleMessages.bind(this));
             // ✅ CONFIGURAR EVENTOS
             this.setupBaileysEvents(socket, sessionName, instanceId, userId, saveCreds);
 
@@ -461,6 +465,54 @@ class WhatsAppService {
         }
     }
 
+    async handleMessages({ messages, type }) {
+        if (type !== "notify") return;
+
+        for (const msg of messages) {
+            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
+
+            // Extrair informações do participante
+            const participantInfo = this.extractParticipantInfo(msg);
+            console.log("Salvando na tabela...")
+            if (participantInfo) {
+                try {
+                    // Salvar/atualizar participante
+                    await Participant.upsertParticipant(participantInfo);
+                    console.log(`Participante processado: ${participantInfo.pushName}`);
+                } catch (error) {
+                    console.error('Erro ao salvar participante:', error);
+                }
+            }
+
+            console.log(JSON.stringify(msg));
+        }
+    }
+
+    // Função auxiliar para extrair informações do participante
+    extractParticipantInfo(msg) {
+        try {
+            const participant = msg.key?.participant;
+            const phoneNumber = msg.key?.participantPn;
+            const pushName = msg.pushName;
+            const remoteJid = msg.key?.remoteJid;
+
+            if (!participant || !phoneNumber || !pushName || !remoteJid) {
+                console.log('Dados do participante incompletos');
+                return null;
+            }
+
+            return {
+                participantId: participant,
+                phoneNumber: phoneNumber.replace('@s.whatsapp.net', ''),
+                pushName: pushName.trim(),
+                remoteJid: remoteJid
+            };
+        } catch (error) {
+            console.error('Erro ao extrair informações do participante:', error);
+            return null;
+        }
+    }
+
 
 
     async handleReconnection(sessionName, userId, instanceId) {
@@ -692,34 +744,6 @@ class WhatsAppService {
         }
     }
 
-
-    async debugGroupParticipants(sessionName, groupJid) {
-        try {
-            const socket = this.sockets.get(sessionName);
-            if (!socket) {
-                throw new Error('Socket não encontrado');
-            }
-
-            const group = await socket.groupMetadata(groupJid);
-            console.log('🔍 Debug - Participantes do grupo:');
-            console.log('Nome:', group.subject);
-            console.log('Total de participantes:', group.participants.length);
-
-            group.participants.forEach((participant, index) => {
-                console.log(`Participante ${index + 1}:`, {
-                    id: participant.id,
-                    admin: participant.admin,
-                    name: participant.name || 'Sem nome'
-                });
-            });
-
-            return group.participants;
-        } catch (error) {
-            console.error('❌ Erro no debug:', error);
-            throw error;
-        }
-    }
-
     extractParticipantsAsContacts(participants) {
 
         if (!participants || !Array.isArray(participants)) {
@@ -944,7 +968,8 @@ class WhatsAppService {
             timestamp: new Date()
         };
 
-    } catch(error) {
+        }
+        catch(error) {
         console.error(`❌ [${sessionName}] Erro ao enviar mídia para ${jid}:`, error.message);
 
         // Se for erro de conexão, marcar como desconectado
@@ -961,50 +986,7 @@ class WhatsAppService {
         };
     }
 
-
-
-    // FUNÇÃO DE ENVIO SIMPLIFICADA E ROBUSTA
-    async sendMessageToContact(sessionName, jid, message) {
-        console.log(`📤 [${sessionName}] Preparando envio para: ${jid}`);
-
-        // Verificar estado da conexão
-        const connectionState = this.connectionStates.get(sessionName);
-        if (connectionState !== 'connected') {
-            throw new Error(`Instância não está conectada. Estado: ${connectionState}`);
-        }
-
-        const socket = this.sockets.get(sessionName);
-        if (!socket || !socket.user) {
-            throw new Error('Socket não disponível ou não autenticado');
-        }
-
-        try {
-            // Formatar JID
-            let formattedJid = jid;
-            if (!jid.includes('@')) {
-                const phone = jid.replace(/\D/g, '');
-                formattedJid = `${phone}@s.whatsapp.net`;
-            }
-
-            console.log(`🚀 [${sessionName}] Enviando mensagem para: ${formattedJid}`);
-
-            // Envio direto sem verificações complexas
-            const result = await socket.sendMessage(formattedJid, { text: message });
-
-            console.log(`✅ [${sessionName}] Mensagem enviada com sucesso para: ${formattedJid}`);
-            return result;
-
-        } catch (error) {
-            console.error(`❌ [${sessionName}] Erro ao enviar para ${jid}:`, error.message);
-
-            // Se for erro de conexão, marcar como desconectado
-            if (error.message.includes('not connected') || error.message.includes('socket') || error.message.includes('connection')) {
-                this.connectionStates.set(sessionName, 'disconnected');
-            }
-
-            throw error;
-        }
-    }
+   
 
     async debugSocket(sessionName) {
         console.log(`🔍 [DEBUG] Analisando socket: ${sessionName}`);
@@ -1067,7 +1049,7 @@ class WhatsAppService {
             console.error('❌ [WhatsAppService] Erro na limpeza geral:', error);
         }
     }
-    // services/whatsappService.js - ADICIONE ESTA FUNÇÃO:
+
 
     async reconnectInstance(sessionName, userId) {
         try {
