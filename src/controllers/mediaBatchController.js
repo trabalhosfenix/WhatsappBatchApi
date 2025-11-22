@@ -410,6 +410,7 @@ const processMediaBatch = async (batchId) => {
 
     const whatsappInstance = batch.whatsappInstanceId;
     const instanceId = whatsappInstance._id;
+    const InstancePhoneNumber =whatsappInstance.phoneNumber
 
     // ✅ Verificar limite diário antes de iniciar
     const limitStatus = await rateLimitService.getLimitStatus(batch.userId, instanceId);
@@ -478,6 +479,7 @@ const processMediaBatch = async (batchId) => {
           // ✅ Envio via mediaService
           const sendResult = await mediaService.sendMediaToContact(
             whatsappInstance.sessionName,
+            InstancePhoneNumber,
             jid,
             mediaItem,
             caption,

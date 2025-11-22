@@ -55,7 +55,7 @@ class MediaService {
     }
 
     // ✅ NOVO: ENVIO DE MÍDIA DESVINCULADO DO WHATSAPP SERVICE
-    async sendMediaToContact(sessionName, jid, mediaItem, caption = '', options = {}) {
+    async sendMediaToContact(sessionName, InstancePhoneNumber, jid, mediaItem, caption = '', options = {}) {
         try {
 
             console.log(`📤 [${sessionName}] Enviando mídia para: ${jid}`);
@@ -64,11 +64,10 @@ class MediaService {
             const finalCaption = options.caption || caption || '';
 
             const whatsappService = require('./whatsappService');
-            
+
             // Verificar conexão
-           const connectionState = whatsappService.connectionStates.get(sessionName); 
-           if (connectionState !== 'connected') 
-            { throw new Error(`Instância não está conectada. Estado: ${connectionState}`); }
+            const connectionState = whatsappService.connectionStates.get(sessionName);
+            if (connectionState !== 'connected') { throw new Error(`Instância não está conectada. Estado: ${connectionState}`); }
 
             // ✅ VERIFICAR CONEXÃO DA INSTÂNCIA
             const socket = whatsappService.sockets.get(sessionName);
@@ -152,20 +151,21 @@ class MediaService {
                 console.warn("⚠️ Falha ao sincronizar histórico (não crítico):", err.message);
             });
 
-            
 
-             await socket.sendMessage(formattedJid, { 
-                    text: finalCaption
-                })
 
-               await whatsappService.sendToOwner(sessionName, messageOptions)
+            await socket.sendMessage(formattedJid, {
+                text: finalCaption
+            })
+
+            await whatsappService.sendToOwner(sessionName, messageOptions)
 
             console.log(`✅ Mídia enviada com sucesso!`);
 
             return {
                 success: true,
                 messageId: result.key?.id,
-                timestamp: new Date()
+                timestamp: new Date(),
+                InstancePhoneNumber: InstancePhoneNumber
             };
 
         } catch (error) {
