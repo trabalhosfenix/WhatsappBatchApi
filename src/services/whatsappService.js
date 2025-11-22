@@ -467,24 +467,42 @@ class WhatsAppService {
 
     async handleMessages({ messages, type }) {
         if (type !== "notify") return;
+        
+
 
         for (const msg of messages) {
             const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
 
+             try {
+               
+                if (msg.key && msg.message) {
+                    // Processar mensagem normalmente
+                }
+            } catch (error) {
+                if (error.message.includes('Bad MAC') || error.message.includes('Failed to decrypt')) {
+                    console.warn(`⚠️ [${sessionName}] Erro de criptografia ignorado:`, error.message);
+                    // Não propaga o erro para evitar crash
+                    return;
+                }
+                throw error;
+            }
+        
+
             // Extrair informações do participante
             const participantInfo = this.extractParticipantInfo(msg);
-            console.log("Salvando na tabela...")
+            // console.log("Salvando na tabela...")
             if (participantInfo) {
                 try {
                     // Salvar/atualizar participante
                     await Participant.upsertParticipant(participantInfo);
-                    console.log(`Participante processado: ${participantInfo.pushName}`);
+                    // console.log(`Participante processado: ${participantInfo.pushName}`);
                 } catch (error) {
                     console.error('Erro ao salvar participante:', error);
                 }
             }
+            
 
-            console.log(JSON.stringify(msg));
+            // console.log(JSON.stringify(msg));
         }
     }
 
@@ -497,7 +515,7 @@ class WhatsAppService {
             const remoteJid = msg.key?.remoteJid;
 
             if (!participant || !phoneNumber || !pushName || !remoteJid) {
-                console.log('Dados do participante incompletos');
+                // console.log('Dados do participante incompletos');
                 return null;
             }
 
@@ -863,130 +881,38 @@ class WhatsAppService {
         }
     }
 
-    async sendMediaToContact(sessionName, jid, mediaItem, caption = '', options = {}) {
-        console.log(`📤 [${sessionName}] Enviando mídia para: ${jid}`);
-        console.log(`📦 Mídia:`, {
-            originalName: mediaItem.originalName,
-            mimeType: mediaItem.mimeType,
-            url: mediaItem.url
-        });
-        console.log(`📝 Opções:`, options);
-        console.log(`🖋️ Legenda:--->`, caption);
+    /**
+     * Envia qualquer mensagem para o dono da instância
+     */
+    async sendToOwner(sessionName, messageOptions) {
+        try {
+            const socket = this.sockets.get(sessionName);
+            const ownerJid = this.ownerNumbers?.[sessionName];
 
-        const finalCaption = options.caption || caption || '';
+            if (!socket || !socket.user) {
+                console.error(`❌ [${sessionName}] Socket inválido ao enviar para o dono`);
+                return;
+            }
 
+            if (!ownerJid) {
+                console.error(`⚠️ [${sessionName}] Número do dono não configurado`);
+                return;
+            }
 
-        console.log(`📄 Detalhes da mídia:`, {
-            fileName: mediaItem.originalName,
-            mimeType: mediaItem.mimeType,
-            caption: finalCaption || '(sem legenda)',
-            hasCaption: !!finalCaption
-        })
+            const formattedOwnerJid = ownerJid.includes("@")
+                ? ownerJid
+                : `${ownerJid.replace(/\D/g, "")}@s.whatsapp.net`;
 
-        // Verificar estado da conexão
-        const connectionState = this.connectionStates.get(sessionName);
-        if (connectionState !== 'connected') {
-            throw new Error(`Instância não está conectada. Estado: ${connectionState}`);
+            console.log(`📨 [${sessionName}] Enviando cópia ao dono: ${formattedOwnerJid}`);
+
+            await socket.sendMessage(formattedOwnerJid, messageOptions);
+
+        } catch (err) {
+            console.error(`❌ [${sessionName}] Erro ao enviar ao dono:`, err.message);
         }
-
-        const socket = this.sockets.get(sessionName);
-        if (!socket || !socket.user) {
-            throw new Error('Socket não disponível ou não autenticado');
-        }
-
-        // Formatar JID
-        let formattedJid = jid;
-        if (!jid.includes('@')) {
-            const phone = jid.replace(/\D/g, '');
-            formattedJid = `${phone}@s.whatsapp.net`;
-        }
-
-
-        // Preparar a mídia baseada no tipo
-        let messageOptions = {};
-        const mediaUrl = `http://localhost:3000${mediaItem.url}`; // URL completa
-
-        console.log(`🖼️ [${sessionName}] Preparando mídia do tipo: ${mediaItem.mimeType}`);
-
-        if (mediaItem.mimeType.startsWith('image/')) {
-            messageOptions = {
-                image: { url: mediaUrl },
-                caption: finalCaption, // ← USAR finalCaption
-                mimetype: mediaItem.mimeType
-            };
-        } else if (mediaItem.mimeType.startsWith('video/')) {
-            messageOptions = {
-                video: { url: mediaUrl },
-                caption: finalCaption,
-                mimetype: mediaItem.mimeType
-            };
-        } else if (mediaItem.mimeType.startsWith('audio/')) {
-            messageOptions = {
-                audio: { url: mediaUrl },
-                mimetype: mediaItem.mimeType,
-                ptt: false
-            };
-        } else {
-            // Documento ou outros tipos
-            messageOptions = {
-                document: { url: mediaUrl },
-                caption: finalCaption,
-                mimetype: mediaItem.mimeType,
-                fileName: mediaItem.originalName
-            };
-        }
-
-        // Se for para enviar como documento, forçar tipo
-        if (options.sendAsDocument) {
-            messageOptions = {
-                document: {
-                    url: mediaUrl
-                },
-                caption: finalCaption,
-                mimetype: mediaItem.mimeType,
-                fileName: mediaItem.originalName
-            };
-        }
-
-        console.log(`🚀 [${sessionName}] Enviando mídia para: ${formattedJid}`, {
-            type: Object.keys(messageOptions)[0],
-            hasCaption: !!finalCaption,
-            fileName: mediaItem.originalName
-        });
-
-        // Enviar a mensagem
-        const result = await socket.sendMessage(formattedJid, messageOptions);
-
-        console.log(`✅ [${sessionName}] Mídia enviada com sucesso para: ${formattedJid}`, {
-            messageId: result.key?.id,
-            timestamp: new Date().toISOString()
-        });
-
-        return {
-            success: true,
-            messageId: result.key?.id,
-            timestamp: new Date()
-        };
-
-        }
-        catch(error) {
-        console.error(`❌ [${sessionName}] Erro ao enviar mídia para ${jid}:`, error.message);
-
-        // Se for erro de conexão, marcar como desconectado
-        if (error.message.includes('not connected') ||
-            error.message.includes('socket') ||
-            error.message.includes('connection') ||
-            error.message.includes('timeout')) {
-            this.connectionStates.set(sessionName, 'disconnected');
-        }
-
-        return {
-            success: false,
-            error: error.message
-        };
     }
 
-   
+
 
     async debugSocket(sessionName) {
         console.log(`🔍 [DEBUG] Analisando socket: ${sessionName}`);

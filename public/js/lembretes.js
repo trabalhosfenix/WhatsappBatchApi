@@ -49,6 +49,7 @@ class LembretesManager {
                 // ✅ SEMPRE MOSTRAR POPUP SE HÁ LEMBRETES PENDENTES
                 if (!this.lembreteAtual || this.lembreteAtual._id !== lembrete._id) {
                     this.mostrarPopupLembrete(lembrete);
+                    
                 }
             } else if (this.popupVisivel) {
                 // ✅ SE NÃO HÁ LEMBRETES E POPUP ESTÁ VISÍVEL, FECHAR

@@ -13,11 +13,16 @@ async function testBaileysConnection() {
         const sock = makeWASocket({
             auth: state,
             logger: pino({ level: "debug" }),
-            printQRInTerminal: true,
+            printQRInTerminal: false,
             browser: Browsers.macOS("Desktop"),
             version: [2, 3001, 101],
             connectTimeoutMs: 30000,
             retryRequestDelayMs: 3000,
+             // ✅ CONFIGURAÇÕES PARA EVITAR ERROS DE CRIPTOGRAFIA
+            markOnlineOnConnect: true,
+            generateHighQualityLinkPreview: false,
+            syncFullHistory: true,
+            linkPreviewImageThumbnailWidth: 192,
         });
 
         sock.ev.on("creds.update", saveCreds);

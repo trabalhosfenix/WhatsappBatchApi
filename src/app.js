@@ -114,6 +114,13 @@ app.get('/', (req, res) => {
   });
 });
 
+// Adicione na seção de rotas:
+app.use('/api/media', mediaBatchRoutes);
+
+// Servir arquivos de mídia estáticos (se necessário)
+app.use('/media', express.static(path.join(__dirname, 'uploads/media')));
+
+
 // ✅ CORREÇÃO: Rota admin ANTES do 404
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public/admin.html'));

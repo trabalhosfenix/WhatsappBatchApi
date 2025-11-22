@@ -5,6 +5,7 @@ const ContactGroup = require('../models/ContactGroup');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 
 class MediaService {
+
     constructor() {
         this.uploadDir = path.join(__dirname, '../uploads/media');
         this.ensureUploadDir();
@@ -56,34 +57,110 @@ class MediaService {
     // ✅ NOVO: ENVIO DE MÍDIA DESVINCULADO DO WHATSAPP SERVICE
     async sendMediaToContact(sessionName, jid, mediaItem, caption = '', options = {}) {
         try {
-            console.log(`📤 [MediaService] Enviando mídia via ${sessionName} para ${jid}`);
-            
-            // ✅ IMPORTAR DINAMICAMENTE O WHATSAPP SERVICE
-            // Isso mantém o desacoplamento - só carrega quando necessário
+
+            console.log(`📤 [${sessionName}] Enviando mídia para: ${jid}`);
+
+            // Garantir legenda final
+            const finalCaption = options.caption || caption || '';
+
             const whatsappService = require('./whatsappService');
             
+            // Verificar conexão
+           const connectionState = whatsappService.connectionStates.get(sessionName); 
+           if (connectionState !== 'connected') 
+            { throw new Error(`Instância não está conectada. Estado: ${connectionState}`); }
+
             // ✅ VERIFICAR CONEXÃO DA INSTÂNCIA
             const socket = whatsappService.sockets.get(sessionName);
             if (!socket || !socket.user) {
                 throw new Error(`Instância ${sessionName} não está conectada`);
             }
 
-            // ✅ PREPARAR MENSAGEM
-            const messageOptions = this.prepareMessageOptions(mediaItem, caption, options);
+            // Formatar JID
+            let formattedJid = jid;
+            if (!jid.includes('@')) {
+                const phone = jid.replace(/\D/g, '');
+                formattedJid = `${phone}@s.whatsapp.net`;
+            }
+
+            // Validar mídia
+            if (!mediaItem?.url || !mediaItem?.mimeType) {
+                throw new Error('Objeto de mídia inválido. MimeType ou URL ausente.');
+            }
+
+            const mediaUrl = `http://localhost:3000${mediaItem.url}`;
+            console.log(`🖼️ Tipo detectado: ${mediaItem.mimeType}`);
+
+            let messageOptions = {};
+
+            // Escolher tipo de mídia
+            if (!options.sendAsDocument) {
+                if (mediaItem.mimeType.startsWith('image/')) {
+                    messageOptions = {
+                        image: { url: mediaUrl },
+                        // caption: finalCaption,
+                        mimetype: mediaItem.mimeType
+                    };
+                } else if (mediaItem.mimeType.startsWith('video/')) {
+                    messageOptions = {
+                        video: { url: mediaUrl },
+                        // caption: finalCaption,
+                        mimetype: mediaItem.mimeType
+                    };
+                } else if (mediaItem.mimeType.startsWith('audio/')) {
+                    messageOptions = {
+                        audio: { url: mediaUrl },
+                        ptt: false,
+                        mimetype: mediaItem.mimeType
+                    };
+                } else {
+                    messageOptions = {
+                        document: { url: mediaUrl },
+                        // caption: finalCaption,
+                        mimetype: mediaItem.mimeType,
+                        fileName: mediaItem.originalName
+                    };
+                }
+            } else {
+                messageOptions = {
+                    document: { url: mediaUrl },
+                    // caption: finalCaption,
+                    mimetype: mediaItem.mimeType,
+                    fileName: mediaItem.originalName
+                };
+            }
+
+            console.log(`🚀 Enviando para ${formattedJid} tipo ${Object.keys(messageOptions)[0]}`);
+
+            //
+            // 🔥 ENVIO DA MENSAGEM COM "ORIGIN: device"
+            //
+            const result = await socket.sendMessage(formattedJid, messageOptions, {
+                additionalAttributes: {
+                    origin: 'device'
+                }
+            });
+
+            //
+            // 🔥 ENVIAR MENSAGEM DE SINCRONIZAÇÃO (para aparecer no WhatsApp do remetente)
+            //
+            await socket.sendMessage(socket.user.id, {
+                deviceSync: {
+                    critical_unblock_low: 1
+                }
+            }).catch(err => {
+                console.warn("⚠️ Falha ao sincronizar histórico (não crítico):", err.message);
+            });
+
             
-            console.log(`📦 Configuração da mídia:`, {
-                type: Object.keys(messageOptions)[0],
-                caption: caption || '(sem legenda)',
-                mimetype: mediaItem.mimeType
-            });
 
-            // ✅ ENVIAR VIA WHATSAPP SERVICE
-            const result = await socket.sendMessage(jid, messageOptions);
+             await socket.sendMessage(formattedJid, { 
+                    text: finalCaption
+                })
 
-            console.log(`✅ [MediaService] Mídia enviada com sucesso para ${jid} |\n ${JSON.stringify(result)}`, {
-                messageId: result.key?.id,
-                timestamp: new Date().toISOString()
-            });
+               await whatsappService.sendToOwner(sessionName, messageOptions)
+
+            console.log(`✅ Mídia enviada com sucesso!`);
 
             return {
                 success: true,
@@ -92,20 +169,32 @@ class MediaService {
             };
 
         } catch (error) {
-            console.error(`❌ [MediaService] Erro ao enviar mídia para ${jid}:`, error);
-            
-            // ✅ CLASSIFICAR ERROS
-            const errorInfo = this.classifyError(error);
-            throw new Error(`${errorInfo.type}: ${error.message}`);
+            console.error(`❌ [${sessionName}] Erro ao enviar mídia para ${jid}:`, error);
+
+            // Tratar erros de conexão
+            if (
+                error.message.includes('not connected') ||
+                error.message.includes('socket') ||
+                error.message.includes('connection') ||
+                error.message.includes('timeout') ||
+                error.message.includes('stream')
+            ) {
+                this.connectionStates.set(sessionName, 'disconnected');
+            }
+
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
     // ✅ PREPARAR OPÇÕES DE MENSAGEM
     prepareMessageOptions(mediaItem, caption, options) {
         const mediaUrl = `http://localhost:3000${mediaItem.url}`;
-        const baseConfig = { 
+        const baseConfig = {
             url: mediaUrl,
-            mimetype: mediaItem.mimeType 
+            mimetype: mediaItem.mimeType
         };
 
         // ✅ ENVIO COMO DOCUMENTO (FORÇADO)
@@ -121,26 +210,26 @@ class MediaService {
 
         // ✅ DETECTAR TIPO AUTOMATICAMENTE
         const mediaType = this.detectMediaType(mediaItem.mimeType);
-        
+
         const typeMap = {
-            image: { 
-                image: baseConfig, 
-                caption: caption 
+            image: {
+                image: baseConfig,
+                caption: caption
             },
-            video: { 
-                video: baseConfig, 
-                caption: caption 
+            video: {
+                video: baseConfig,
+                caption: caption
             },
-            audio: { 
-                audio: baseConfig 
+            audio: {
+                audio: baseConfig
                 // ❌ Áudio não suporta caption no WhatsApp
             },
-            document: { 
-                document: { 
-                    ...baseConfig, 
-                    fileName: mediaItem.originalName 
-                }, 
-                caption: caption 
+            document: {
+                document: {
+                    ...baseConfig,
+                    fileName: mediaItem.originalName
+                },
+                caption: caption
             }
         };
 
@@ -150,7 +239,7 @@ class MediaService {
     // ✅ CLASSIFICAR ERROS PARA MELHOR TRATAMENTO
     classifyError(error) {
         const message = error.message.toLowerCase();
-        
+
         if (message.includes('rate limit') || message.includes('too many') || message.includes('429')) {
             return { type: 'RATE_LIMIT', retryable: true };
         }
@@ -163,7 +252,7 @@ class MediaService {
         if (message.includes('blocked') || message.includes('banned')) {
             return { type: 'BLOCKED', retryable: false };
         }
-        
+
         return { type: 'UNKNOWN', retryable: false };
     }
 
@@ -171,7 +260,7 @@ class MediaService {
     async processMediaBatch(batchId) {
         try {
             console.log(`🔄 [MediaService] Processando lote: ${batchId}`);
-            
+
             const batch = await MediaBatch.findById(batchId)
                 .populate('contactGroupIds')
                 .populate('whatsappInstanceId');
@@ -182,7 +271,7 @@ class MediaService {
 
             // ✅ COLETAR CONTATOS ÚNICOS
             const allContacts = await this.collectUniqueContacts(batch.contactGroupIds);
-            
+
             console.log(`📨 [MediaService] ${batch.mediaItems.length} mídias para ${allContacts.length} contatos`);
 
             // ✅ O PROCESSAMENTO REAL AGORA ESTÁ NO CONTROLLER
@@ -273,7 +362,7 @@ class MediaService {
         try {
             const whatsappService = require('./whatsappService');
             const socket = whatsappService.sockets.get(sessionName);
-            
+
             return {
                 available: !!(socket && socket.user),
                 sessionName: sessionName,
@@ -288,6 +377,7 @@ class MediaService {
             };
         }
     }
+
 }
 
 module.exports = new MediaService();
