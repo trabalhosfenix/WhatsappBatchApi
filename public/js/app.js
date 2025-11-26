@@ -7,6 +7,7 @@ class Auth {
     constructor() {
         this.token = localStorage.getItem('authToken');
         this.user = JSON.parse(localStorage.getItem('user'));
+        this.isAdmin = null
         this.init();
     }
 
@@ -218,6 +219,7 @@ class Auth {
 
     checkAuth() {
         if (this.token && this.user) {
+
             this.showDashboard();
         } else {
             this.showLoginSection();
@@ -228,62 +230,81 @@ class Auth {
         const loginSection = document.getElementById('loginSection');
         const dashboardSection = document.getElementById('dashboardSection');
         const logoutBtn = document.getElementById('logoutBtn');
+        const isAdminBtn = document.getElementById('adminButton');
 
         if (loginSection) loginSection.classList.add('active');
         if (dashboardSection) dashboardSection.classList.remove('active');
         if (logoutBtn) logoutBtn.style.display = 'none';
+        if (isAdminBtn) isAdminBtn.style.display = 'none';
+       
     }
+     
 
-    showDashboard() {
-        const loginSection = document.getElementById('loginSection');
-        const dashboardSection = document.getElementById('dashboardSection');
-        const logoutBtn = document.getElementById('logoutBtn');
+        showDashboard() {
+            const loginSection = document.getElementById('loginSection');
+            const dashboardSection = document.getElementById('dashboardSection');
+            const logoutBtn = document.getElementById('logoutBtn');
+             const isAdminBtn = document.getElementById('adminButton');
+          
 
-        if (loginSection) loginSection.classList.remove('active');
-        if (dashboardSection) dashboardSection.classList.add('active');
-        if (logoutBtn) logoutBtn.style.display = 'block';
 
-        // Update user info
-        const userName = document.getElementById('userName');
-        const userEmail = document.getElementById('userEmail');
+            if (loginSection) loginSection.classList.remove('active');
+            if (dashboardSection) dashboardSection.classList.add('active');
+            if (logoutBtn) logoutBtn.style.display = 'block';
+            this.isAdmin = this.user["role"]
+            console.log("User role:", this.isAdmin);
+            if (this.isAdmin === "admin") {
+                isAdminBtn.style.display = 'block'
+                isAdminBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    window.location.href = '../admin.html'
 
-        if (userName) userName.textContent = this.user.name;
-        if (userEmail) userEmail.textContent = this.user.email;
-    }
+                })
+            }
 
-    getAuthHeaders() {
-        return {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.token}`
-        };
-    }
 
-    showNotification(message, type = 'success') {
-        const notification = document.getElementById('notification');
-        if (!notification) {
-            console.warn('Elemento de notificação não encontrado');
-            return;
+
+            // Update user info
+            const userName = document.getElementById('userName');
+            const userEmail = document.getElementById('userEmail');
+
+            if (userName) userName.textContent = this.user.name;
+            if (userEmail) userEmail.textContent = this.user.email;
         }
 
-        notification.textContent = message;
-        notification.className = `notification ${type}`;
-        notification.style.display = 'block';
+        getAuthHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.token}`
+            };
+        }
 
-        setTimeout(() => {
-            notification.style.display = 'none';
-        }, 3000);
-    }
+        showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            if (!notification) {
+                console.warn('Elemento de notificação não encontrado');
+                return;
+            }
 
-    showLoading() {
-        const loading = document.getElementById('loading');
-        if (loading) loading.style.display = 'flex';
-    }
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.style.display = 'block';
 
-    hideLoading() {
-        const loading = document.getElementById('loading');
-        if (loading) loading.style.display = 'none';
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 3000);
+        }
+
+        showLoading() {
+            const loading = document.getElementById('loading');
+            if (loading) loading.style.display = 'flex';
+        }
+
+        hideLoading() {
+            const loading = document.getElementById('loading');
+            if (loading) loading.style.display = 'none';
+        }
     }
-}
 
 // ===== CONTACT GROUPS CLASS =====
 class ContactGroups {
@@ -2001,7 +2022,6 @@ class App {
         try {
             // Initialize core systems first
             await this.initializeCoreSystems();
-
             // Then initialize feature modules
             this.initializeModules();
             this.setupNavigation();

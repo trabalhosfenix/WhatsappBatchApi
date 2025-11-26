@@ -1,682 +1,1251 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Admin - Sistema Otimizado</title>
-    
-    <!-- CSS -->
+    <title>Dashboard Administrativo - SuperUser</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #34495e;
+            --accent-color: #3498db;
+            --success-color: #27ae60;
+            --warning-color: #f39c12;
+            --danger-color: #e74c3c;
         }
 
         body {
+            background-color: #f8f9fa;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+        }
+
+        .sidebar {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            height: 100vh;
+            position: fixed;
+            transition: all 0.3s;
+        }
+
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            margin: 2px 0;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .sidebar .nav-link i {
+            margin-right: 10px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .main-content {
+            margin-left: 250px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .stat-card {
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s;
+            border: none;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card .card-body {
             padding: 20px;
         }
 
-        .dashboard-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
+        .stat-card i {
+            font-size: 2rem;
+            opacity: 0.7;
         }
 
-        .dashboard-header {
-            background: linear-gradient(135deg, #2c3e50, #34495e);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-
-        .dashboard-header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-        }
-
-        .dashboard-header p {
-            opacity: 0.8;
-            font-size: 1.1rem;
-        }
-
-        .controls-bar {
-            background: #f8f9fa;
-            padding: 15px 30px;
-            border-bottom: 1px solid #e9ecef;
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--accent-color);
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn-primary {
-            background: #3498db;
+            justify-content: center;
             color: white;
+            font-weight: bold;
         }
 
-        .btn-primary:hover {
-            background: #2980b9;
-            transform: translateY(-2px);
-        }
-
-        .btn-success {
-            background: #27ae60;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #219a52;
-        }
-
-        .btn-warning {
-            background: #f39c12;
-            color: white;
-        }
-
-        .btn-warning:hover {
-            background: #e67e22;
-        }
-
-        .btn-danger {
-            background: #e74c3c;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c0392b;
-        }
-
-        .metrics-display {
-            background: #34495e;
-            color: white;
-            padding: 15px 30px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9rem;
-            border-bottom: 1px solid #2c3e50;
-        }
-
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            padding: 30px;
-        }
-
-        .card {
-            background: white;
-            border: 1px solid #e9ecef;
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-        }
-
-        .card-header {
-            display: flex;
-            justify-content: between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #f8f9fa;
-        }
-
-        .card-title {
-            font-size: 1.3rem;
-            color: #2c3e50;
-            font-weight: 600;
-        }
-
-        .card-badge {
-            background: #3498db;
-            color: white;
-            padding: 4px 12px;
+        .status-badge {
+            padding: 5px 10px;
             border-radius: 20px;
             font-size: 0.8rem;
-            font-weight: 600;
+            font-weight: 500;
         }
 
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255,255,255,0.95);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            transition: opacity 0.3s ease;
+        .status-active {
+            background-color: rgba(39, 174, 96, 0.2);
+            color: var(--success-color);
         }
 
-        .loading-spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #3498db;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 20px;
-        }
-
-        .loading-text {
-            font-size: 1.1rem;
-            color: #2c3e50;
-            font-weight: 600;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .data-item {
-            padding: 12px 0;
-            border-bottom: 1px solid #f8f9fa;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .data-item:last-child {
-            border-bottom: none;
-        }
-
-        .status-connected {
-            color: #27ae60;
-            font-weight: 600;
-        }
-
-        .status-disconnected {
-            color: #e74c3c;
-            font-weight: 600;
+        .status-inactive {
+            background-color: rgba(231, 76, 60, 0.2);
+            color: var(--danger-color);
         }
 
         .status-pending {
-            color: #f39c12;
+            background-color: rgba(243, 156, 18, 0.2);
+            color: var(--warning-color);
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .nav-tabs .nav-link.active {
+            border-bottom: 3px solid var(--accent-color);
             font-weight: 600;
         }
 
-        .hidden {
-            display: none;
+        .search-box {
+            position: relative;
         }
 
-        .error-message {
-            background: #e74c3c;
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 10px 0;
-            text-align: center;
+        .search-box input {
+            padding-left: 40px;
         }
 
-        .success-message {
-            background: #27ae60;
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 10px 0;
-            text-align: center;
+        .search-box i {
+            position: absolute;
+            left: 15px;
+            top: 12px;
+            color: #6c757d;
         }
 
         @media (max-width: 768px) {
-            .controls-bar {
-                flex-direction: column;
-                align-items: stretch;
+            .sidebar {
+                margin-left: -250px;
             }
-            
-            .btn {
-                width: 100%;
-                justify-content: center;
+
+            .main-content {
+                margin-left: 0;
             }
-            
-            .dashboard-grid {
-                grid-template-columns: 1fr;
-                padding: 15px;
+
+            .sidebar.active {
+                margin-left: 0;
+            }
+
+            .main-content.active {
+                margin-left: 250px;
             }
         }
     </style>
 </head>
+
 <body>
-    <div class="dashboard-container">
-        <!-- Header -->
-        <div class="dashboard-header">
-            <h1>🚀 Dashboard Admin</h1>
-            <p>Sistema Otimizado com Gestão de Rate Limiting</p>
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="p-3">
+            <h4 class="text-center mb-4">
+                <i class="fas fa-shield-alt"></i> Admin Dashboard
+            </h4>
         </div>
 
-        <!-- Controls -->
-        <div class="controls-bar">
-            <div class="control-group">
-                <button class="btn btn-primary" onclick="dashboardManager.loadData()">
-                    🔄 Carregar Dados (Sequencial)
-                </button>
-                <button class="btn btn-success" onclick="dashboardManager.loadDataParallel()">
-                    ⚡ Carregar Dados (Paralelo)
-                </button>
-                <button class="btn btn-warning" onclick="dashboardManager.reload()">
-                    🗑️ Recarregar com Cache Limpo
-                </button>
-            </div>
-            <div class="control-group">
-                <button class="btn btn-danger" onclick="dashboardManager.forceFallback()">
-                    🆘 Modo Emergência
-                </button>
-                <button class="btn" onclick="showMetrics()" style="background: #9b59b6; color: white;">
-                    📊 Ver Métricas
-                </button>
-            </div>
-        </div>
-
-        <!-- Metrics Display -->
-        <div class="metrics-display" id="metricsDisplay">
-            <div>📈 Sistema Ocioso - Aguardando carregamento...</div>
-        </div>
-
-        <!-- Loading Overlay -->
-        <div class="loading-overlay hidden" id="loadingOverlay">
-            <div class="loading-spinner"></div>
-            <div class="loading-text" id="loadingText">Carregando dados...</div>
-        </div>
-
-        <!-- Dashboard Grid -->
-        <div class="dashboard-grid">
-            <!-- Instances Card -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">📱 Instâncias WhatsApp</div>
-                    <div class="card-badge" id="instancesBadge">0</div>
-                </div>
-                <div class="card-content" id="instancesContent">
-                    <div class="data-item">
-                        <span>Carregando...</span>
-                        <span class="status-pending">●</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Batches Card -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">📦 Lotes de Mensagens</div>
-                    <div class="card-badge" id="batchesBadge">0</div>
-                </div>
-                <div class="card-content" id="batchesContent">
-                    <div class="data-item">
-                        <span>Carregando...</span>
-                        <span class="status-pending">●</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Users Card -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">👥 Usuários</div>
-                    <div class="card-badge" id="usersBadge">0</div>
-                </div>
-                <div class="card-content" id="usersContent">
-                    <div class="data-item">
-                        <span>Carregando...</span>
-                        <span class="status-pending">●</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Messages Card -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">💬 Estatísticas de Mensagens</div>
-                    <div class="card-badge" id="messagesBadge">0</div>
-                </div>
-                <div class="card-content" id="messagesContent">
-                    <div class="data-item">
-                        <span>Carregando...</span>
-                        <span class="status-pending">●</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- System Info Card -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">⚙️ Informações do Sistema</div>
-                    <div class="card-badge">ℹ️</div>
-                </div>
-                <div class="card-content" id="systemInfoContent">
-                    <div class="data-item">
-                        <span>Status do Cache:</span>
-                        <span id="cacheStatus">Ativo (30s)</span>
-                    </div>
-                    <div class="data-item">
-                        <span>Última Atualização:</span>
-                        <span id="lastUpdate">Nunca</span>
-                    </div>
-                    <div class="data-item">
-                        <span>Modo Operacional:</span>
-                        <span id="operationalMode" class="status-connected">Normal</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link active" href="#overview" data-section="overview">
+                    <i class="fas fa-tachometer-alt"></i> Visão Geral
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#users" data-section="users">
+                    <i class="fas fa-users"></i> Usuários
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#instances" data-section="instances">
+                    <i class="fas fa-mobile-alt"></i> Instâncias
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#messages" data-section="messages">
+                    <i class="fas fa-envelope"></i> Mensagens
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#batches" data-section="batches">
+                    <i class="fas fa-paper-plane"></i> Disparos
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#contacts" data-section="contacts">
+                    <i class="fas fa-address-book"></i> Contatos
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#groups" data-section="groups">
+                    <i class="fas fa-user-friends"></i> Grupos
+                </a>
+            </li>
+            <li class="nav-item mt-4">
+                <a class="nav-link" href="#">
+                    <i class="fas fa-cog"></i> Configurações
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="#">
+                    <i class="fas fa-sign-out-alt"></i> Sair
+                </a>
+            </li>
+        </ul>
     </div>
 
-    <!-- JavaScript -->
+    <!-- Main Content -->
+    <div class="main-content" id="mainContent">
+        <!-- Top Bar -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <button class="btn btn-outline-secondary d-md-none" id="sidebarToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h2 class="mb-0">Dashboard Administrativo</h2>
+            </div>
+            <div class="d-flex align-items-center">
+                <div class="search-box me-3">
+                    <i class="fas fa-search"></i>
+                    <input type="text" class="form-control" placeholder="Pesquisar...">
+                </div>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="userDropdown"
+                        data-bs-toggle="dropdown">
+                        <i class="fas fa-user-circle me-2"></i> SuperUser
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#"><i class="fas fa-user me-2"></i> Perfil</a></li>
+                        <li><a class="dropdown-item" href="#"><i class="fas fa-cog me-2"></i> Configurações</a></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><a class="dropdown-item" href="#"><i class="fas fa-sign-out-alt me-2"></i> Sair</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overview Section -->
+        <section id="overview" class="dashboard-section">
+            <div class="row mb-4">
+                <div class="col-md-3 mb-3">
+                    <div class="card stat-card border-left-primary">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h5 class="card-title text-muted">Total Usuários</h5>
+                                    <h2 id="totalUsers">0</h2>
+                                    <p class="mb-0"><span class="text-success" id="userGrowth">0%</span> crescimento</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-users text-primary"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card stat-card border-left-success">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h5 class="card-title text-muted">Instâncias Ativas</h5>
+                                    <h2 id="activeInstances">0</h2>
+                                    <p class="mb-0"><span id="connectedInstances">0</span> conectadas</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-mobile-alt text-success"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card stat-card border-left-info">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h5 class="card-title text-muted">Mensagens Enviadas</h5>
+                                    <h2 id="totalMessages">0</h2>
+                                    <p class="mb-0"><span class="text-success" id="successRate">0%</span> sucesso</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-envelope text-info"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card stat-card border-left-warning">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h5 class="card-title text-muted">Disparos Ativos</h5>
+                                    <h2 id="activeBatches">0</h2>
+                                    <p class="mb-0"><span id="totalBatches">0</span> totais</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-paper-plane text-warning"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="chart-container">
+                        <h5>Atividade de Usuários</h5>
+                        <canvas id="userActivityChart" height="250"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="chart-container">
+                        <h5>Status das Instâncias</h5>
+                        <canvas id="instanceStatusChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-4">
+                <div class="col-12">
+                    <div class="chart-container">
+                        <h5>Disparos por Dia (Últimos 7 dias)</h5>
+                        <canvas id="batchActivityChart" height="150"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Users Section -->
+        <section id="users" class="dashboard-section d-none">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3>Gestão de Usuários</h3>
+                <div>
+                    <button class="btn btn-outline-primary me-2">
+                        <i class="fas fa-download me-1"></i> Exportar
+                    </button>
+                    <button class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i> Novo Usuário
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="p-3 border-bottom">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" class="form-control" id="userSearch"
+                                    placeholder="Buscar usuários...">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex justify-content-end">
+                                <select class="form-select w-auto me-2" id="userStatusFilter">
+                                    <option value="">Todos os status</option>
+                                    <option value="active">Ativo</option>
+                                    <option value="inactive">Inativo</option>
+                                </select>
+                                <select class="form-select w-auto" id="userRoleFilter">
+                                    <option value="">Todos os perfis</option>
+                                    <option value="admin">Administrador</option>
+                                    <option value="user">Usuário</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" id="usersTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Usuário</th>
+                                <th>Email</th>
+                                <th>Perfil</th>
+                                <th>Status</th>
+                                <th>Último Login</th>
+                                <th>Instâncias</th>
+                                <th>Disparos</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <!-- Dados carregados via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="p-3 border-top">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            Mostrando <span id="usersShowing">0</span> de <span id="usersTotal">0</span> usuários
+                        </div>
+                        <nav>
+                            <ul class="pagination mb-0" id="usersPagination">
+                                <!-- Paginação será adicionada via JavaScript -->
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Instances Section -->
+        <section id="instances" class="dashboard-section d-none">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3>Instâncias WhatsApp</h3>
+                <div class="btn-group">
+                    <button class="btn btn-outline-primary active" data-filter="all">Todas</button>
+                    <button class="btn btn-outline-primary" data-filter="connected">Conectadas</button>
+                    <button class="btn btn-outline-primary" data-filter="disconnected">Desconectadas</button>
+                </div>
+            </div>
+
+            <div class="row" id="instancesContainer">
+                <!-- Instâncias serão carregadas via JavaScript -->
+            </div>
+        </section>
+
+        <!-- Messages Section -->
+        <section id="messages" class="dashboard-section d-none">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3>Estatísticas de Mensagens</h3>
+                <div>
+                    <select class="form-select w-auto" id="messageTimeRange">
+                        <option value="7">Últimos 7 dias</option>
+                        <option value="30">Últimos 30 dias</option>
+                        <option value="90">Últimos 3 meses</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-8">
+                    <div class="chart-container">
+                        <h5>Volume de Mensagens</h5>
+                        <canvas id="messageVolumeChart" height="250"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="chart-container">
+                        <h5>Status das Mensagens</h5>
+                        <canvas id="messageStatusChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="p-3 border-bottom">
+                    <h5 class="mb-0">Últimas Mensagens</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Data/Hora</th>
+                                <th>Instância</th>
+                                <th>Destinatário</th>
+                                <th>Mensagem</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentMessagesTable">
+                            <!-- Dados carregados via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Batches Section -->
+        <section id="batches" class="dashboard-section d-none">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3>Disparos em Lote</h3>
+                <div class="btn-group">
+                    <button class="btn btn-outline-primary active" data-filter="all">Todos</button>
+                    <button class="btn btn-outline-primary" data-filter="pending">Pendentes</button>
+                    <button class="btn btn-outline-primary" data-filter="processing">Processando</button>
+                    <button class="btn btn-outline-primary" data-filter="completed">Concluídos</button>
+                </div>
+            </div>
+
+            <div class="row" id="batchesContainer">
+                <!-- Batches serão carregados via JavaScript -->
+            </div>
+        </section>
+
+        <!-- Contacts Section -->
+        <section id="contacts" class="dashboard-section d-none">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3>Contatos do Sistema</h3>
+                <div>
+                    <button class="btn btn-outline-primary me-2">
+                        <i class="fas fa-sync-alt me-1"></i> Sincronizar Tudo
+                    </button>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-3 mb-3">
+                    <div class="card stat-card">
+                        <div class="card-body text-center">
+                            <h3 id="totalContacts">0</h3>
+                            <p class="mb-0">Total de Contatos</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card stat-card">
+                        <div class="card-body text-center">
+                            <h3 id="businessContacts">0</h3>
+                            <p class="mb-0">Contatos Business</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card stat-card">
+                        <div class="card-body text-center">
+                            <h3 id="contactsWithProfile">0</h3>
+                            <p class="mb-0">Com Perfil</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card stat-card">
+                        <div class="card-body text-center">
+                            <h3 id="activeContacts">0</h3>
+                            <p class="mb-0">Ativos Recentemente</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="p-3 border-bottom">
+                    <h5 class="mb-0">Contatos por Instância</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Instância</th>
+                                <th>Usuário</th>
+                                <th>Total Contatos</th>
+                                <th>Business</th>
+                                <th>Com Perfil</th>
+                                <th>Última Sincronização</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contactsTable">
+                            <!-- Dados carregados via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Groups Section -->
+        <section id="groups" class="dashboard-section d-none">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3>Grupos de Contatos</h3>
+                <div>
+                    <button class="btn btn-outline-primary me-2">
+                        <i class="fas fa-download me-1"></i> Exportar
+                    </button>
+                    <button class="btn btn-primary">
+                        <i class="fas fa-plus me-1"></i> Novo Grupo
+                    </button>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-8">
+                    <div class="chart-container">
+                        <h5>Grupos por Tipo</h5>
+                        <canvas id="groupTypeChart" height="200"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="chart-container">
+                        <h5>Grupos por Origem</h5>
+                        <canvas id="groupSourceChart" height="200"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <div class="p-3 border-bottom">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="search-box">
+                                <i class="fas fa-search"></i>
+                                <input type="text" class="form-control" placeholder="Buscar grupos...">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex justify-content-end">
+                                <select class="form-select w-auto me-2">
+                                    <option value="">Todos os tipos</option>
+                                    <option value="whatsapp">WhatsApp</option>
+                                    <option value="manual">Manual</option>
+                                    <option value="imported">Importado</option>
+                                </select>
+                                <select class="form-select w-auto">
+                                    <option value="">Todos os status</option>
+                                    <option value=false>Ativo</option>
+                                    <option value=false>Inativo</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Nome do Grupo</th>
+                                <th>Usuário</th>
+                                <th>Origem</th>
+                                <th>Contatos</th>
+                                <th>Status</th>
+                                <th>Última Atividade</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupsTable">
+                            <!-- Dados carregados via JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // =============================================
-        // FUNÇÕES DE UI E ATUALIZAÇÃO
-        // =============================================
+        // Dados de exemplo - substituir por chamadas reais à API
+        async function apiRequest(endpoint, options = {}) {
+            const token = localStorage.getItem('authToken');
 
-        function showLoading(message = 'Carregando dados...') {
-            const overlay = document.getElementById('loadingOverlay');
-            const loadingText = document.getElementById('loadingText');
-            
-            loadingText.textContent = message;
-            overlay.classList.remove('hidden');
-        }
-
-        function hideLoading() {
-            const overlay = document.getElementById('loadingOverlay');
-            overlay.classList.add('hidden');
-        }
-
-        function updateMetricsDisplay(metrics) {
-            const display = document.getElementById('metricsDisplay');
-            if (!metrics) {
-                display.innerHTML = '<div>📈 Sistema Ocioso - Aguardando carregamento...</div>';
-                return;
+            if (!token) {
+                console.error("❌ Usuário não autenticado");
+                window.location.href = 'login.html';
+                throw new Error("Usuário não autenticado");
             }
 
-            const successRate = metrics.totalRequests > 0 
-                ? ((metrics.successfulRequests / metrics.totalRequests) * 100).toFixed(1)
-                : 0;
+            const defaultOptions = {
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                }
+            };
 
-            display.innerHTML = `
-                <div>📊 Requisições: ${metrics.totalRequests} | ✅ Sucessos: ${metrics.successfulRequests} | ❌ Falhas: ${metrics.failedRequests} | 🔄 Retries: ${metrics.retryAttempts} | 🎯 Taxa: ${successRate}%</div>
-            `;
-        }
+            const mergedOptions = {
+                ...defaultOptions,
+                ...options,
+                headers: {
+                    ...defaultOptions.headers,
+                    ...(options.headers || {})
+                }
+            };
 
-        function updateLastUpdate() {
-            const now = new Date();
-            document.getElementById('lastUpdate').textContent = 
-                now.toLocaleTimeString() + ' - ' + now.toLocaleDateString();
-        }
+            try {
+                const res = await fetch(endpoint, mergedOptions);
 
-        function showMetrics() {
-            const metrics = window.dashboardManager?.getMetrics();
-            if (metrics) {
-                alert(`
-📊 MÉTRICAS DO SISTEMA:
-
-Requisições Totais: ${metrics.totalRequests}
-Requisições Bem-sucedidas: ${metrics.successfulRequests}
-Requisições Com Falha: ${metrics.failedRequests}
-Tentativas de Retry: ${metrics.retryAttempts}
-Cache Hits: ${metrics.cacheHits || 0}
-
-Taxa de Sucesso: ${metrics.totalRequests > 0 ? ((metrics.successfulRequests / metrics.totalRequests) * 100).toFixed(1) : 0}%
-                `);
-            } else {
-                alert('Métricas não disponíveis ainda.');
-            }
-        }
-
-        // =============================================
-        // FUNÇÕES DE ATUALIZAÇÃO DE DADOS
-        // =============================================
-
-        function updateInstancesSection(data) {
-            if (!data) return;
-
-            const badge = document.getElementById('instancesBadge');
-            const content = document.getElementById('instancesContent');
-
-            badge.textContent = data.total || 0;
-
-            if (data.instances && data.instances.length > 0) {
-                let html = '';
-                data.instances.forEach(instance => {
-                    const statusClass = instance.status === 'connected' ? 'status-connected' : 'status-disconnected';
-                    const statusIcon = instance.status === 'connected' ? '🟢' : '🔴';
-                    
-                    html += `
-                        <div class="data-item">
-                            <span>${statusIcon} ${instance.name}</span>
-                            <span class="${statusClass}">${instance.status}</span>
-                        </div>
-                    `;
-                });
-
-                // Adicionar resumo
-                html += `
-                    <div class="data-item" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #f8f9fa;">
-                        <span><strong>Resumo:</strong></span>
-                        <span>🟢 ${data.connected || 0} | 🔴 ${data.disconnected || 0}</span>
-                    </div>
-                `;
-
-                content.innerHTML = html;
-            } else {
-                content.innerHTML = `
-                    <div class="data-item">
-                        <span>Nenhuma instância encontrada</span>
-                        <span class="status-disconnected">●</span>
-                    </div>
-                `;
-            }
-        }
-
-        function updateBatchesSection(data) {
-            if (!data) return;
-
-            const badge = document.getElementById('batchesBadge');
-            const content = document.getElementById('batchesContent');
-
-            badge.textContent = data.total || 0;
-
-            if (data.batches && data.batches.length > 0) {
-                let html = '';
-                data.batches.slice(0, 5).forEach(batch => { // Mostrar apenas os 5 primeiros
-                    const statusClass = 'status-pending'; // Simplificado para exemplo
-                    
-                    html += `
-                        <div class="data-item">
-                            <span>📦 ${batch.name || `Lote ${batch.id}`}</span>
-                            <span class="${statusClass}">${batch.status || 'pending'}</span>
-                        </div>
-                    `;
-                });
-
-                if (data.batches.length > 5) {
-                    html += `
-                        <div class="data-item">
-                            <span>...</span>
-                            <span>+${data.batches.length - 5} mais</span>
-                        </div>
-                    `;
+                if (res.status === 401) {
+                    localStorage.removeItem('authToken');
+                    localStorage.removeItem('userData');
+                    window.location.href = "login.html";
+                    throw new Error("Sessão expirada");
                 }
 
-                // Adicionar resumo
-                html += `
-                    <div class="data-item" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #f8f9fa;">
-                        <span><strong>Resumo:</strong></span>
-                        <span>⏳ ${data.pending || 0} | ✅ ${data.sent || 0} | ❌ ${data.failed || 0}</span>
-                    </div>
-                `;
-
-                content.innerHTML = html;
-            } else {
-                content.innerHTML = `
-                    <div class="data-item">
-                        <span>Nenhum lote encontrado</span>
-                        <span class="status-pending">●</span>
-                    </div>
-                `;
-            }
-        }
-
-        function updateUsersSection(data) {
-            if (!data) return;
-
-            const badge = document.getElementById('usersBadge');
-            const content = document.getElementById('usersContent');
-
-            badge.textContent = data.total || 0;
-
-            if (data.users && data.users.length > 0) {
-                let html = '';
-                data.users.slice(0, 5).forEach(user => { // Mostrar apenas os 5 primeiros
-                    const statusClass = user.status === 'active' ? 'status-connected' : 'status-disconnected';
-                    
-                    html += `
-                        <div class="data-item">
-                            <span>👤 ${user.name || `Usuário ${user.id}`}</span>
-                            <span class="${statusClass}">${user.status || 'inactive'}</span>
-                        </div>
-                    `;
-                });
-
-                if (data.users.length > 5) {
-                    html += `
-                        <div class="data-item">
-                            <span>...</span>
-                            <span>+${data.users.length - 5} mais</span>
-                        </div>
-                    `;
+                if (!res.ok) {
+                    const body = await res.json().catch(() => null);
+                    throw new Error(body?.error || `Erro HTTP: ${res.status}`);
                 }
 
-                // Adicionar resumo
-                html += `
-                    <div class="data-item" style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #f8f9fa;">
-                        <span><strong>Resumo:</strong></span>
-                        <span>🟢 ${data.active || 0} | 🔴 ${data.inactive || 0}</span>
-                    </div>
-                `;
+                return await res.json();
 
-                content.innerHTML = html;
-            } else {
-                content.innerHTML = `
-                    <div class="data-item">
-                        <span>Nenhum usuário encontrado</span>
-                        <span class="status-disconnected">●</span>
-                    </div>
-                `;
+            } catch (err) {
+                console.error("❌ Erro API:", err);
+                throw err;
             }
         }
 
-        function updateMessagesSection(data) {
-            if (!data) return;
 
-            const badge = document.getElementById('messagesBadge');
-            const content = document.getElementById('messagesContent');
+        const mockData = {
+          
+            systemStats: {
+                users: 42,
+                instances: {
+                    total: 28,
+                    connected: 19
+                },
+                batches: {
+                    total: 156,
+                    active: 7
+                }
+            },
+          
+            userStats: {
+                total: 42,
+                active: 38,
+                new: 5,
+                growth: 12.5
+            },
+           
+            messageStats: {
+                total: 12450,
+                failed: 850,
+                successRate: 93.2
+            },
 
-            badge.textContent = data.total || 0;
+            users: [
+                {
+                    id: 1,
+                    name: "João Silva",
+                    email: "joao@empresa.com",
+                    role: "user",
+                    isActive: true,
+                    createdAt: "2023-10-15T10:30:00Z",
+                    lastLogin: "2024-01-20T14:22:00Z",
+                    instances: 3,
+                    batches: 12
+                },
+                {
+                    id: 2,
+                    name: "Maria Santos",
+                    email: "maria@empresa.com",
+                    role: "user",
+                    status: "active",
+                    createdAt: "2023-11-02T08:15:00Z",
+                    lastLogin: "2024-01-20T09:45:00Z",
+                    instances: 2,
+                    batches: 8
+                },
+                {
+                    id: 3,
+                    name: "Pedro Oliveira",
+                    email: "pedro@empresa.com",
+                    role: "admin",
+                    status: "active",
+                    createdAt: "2023-09-20T16:40:00Z",
+                    lastLogin: "2024-01-19T17:30:00Z",
+                    instances: 5,
+                    batches: 24
+                },
+                {
+                    id: 4,
+                    name: "Ana Costa",
+                    email: "ana@empresa.com",
+                    role: "user",
+                    status: "inactive",
+                    createdAt: "2023-12-10T11:20:00Z",
+                    lastLogin: "2024-01-15T10:10:00Z",
+                    instances: 1,
+                    batches: 3
+                }
+            ],
 
-            let html = '';
-            
-            // Estatísticas detalhadas
-            const stats = [
-                { label: 'Total de Mensagens', value: data.total || 0, icon: '💬' },
-                { label: 'Enviadas', value: data.sent || 0, icon: '📤' },
-                { label: 'Entregues', value: data.delivered || 0, icon: '✅' },
-                { label: 'Lidas', value: data.read || 0, icon: '👁️' },
-                { label: 'Falhas', value: data.failed || 0, icon: '❌' }
-            ];
+            instances: [
+                {
+                    id: 1,
+                    sessionName: "instance_joao_1",
+                    userId: 1,
+                    userName: "João Silva",
+                    status: "connected",
+                    lastConnection: "2024-01-20T14:20:00Z",
+                    groups: 15,
+                    contacts: 240
+                },
+                {
+                    id: 2,
+                    sessionName: "instance_maria_1",
+                    userId: 2,
+                    userName: "Maria Santos",
+                    status: "connected",
+                    lastConnection: "2024-01-20T09:40:00Z",
+                    groups: 8,
+                    contacts: 120
+                },
+                {
+                    id: 3,
+                    sessionName: "instance_pedro_1",
+                    userId: 3,
+                    userName: "Pedro Oliveira",
+                    status: "disconnected",
+                    lastConnection: "2024-01-19T17:25:00Z",
+                    groups: 22,
+                    contacts: 380
+                }
+            ],
 
-            stats.forEach(stat => {
-                html += `
-                    <div class="data-item">
-                        <span>${stat.icon} ${stat.label}</span>
-                        <span><strong>${stat.value}</strong></span>
-                    </div>
-                `;
+            batches: [
+                {
+                    id: 1,
+                    name: "Promoção Janeiro",
+                    userId: 1,
+                    userName: "João Silva",
+                    status: "completed",
+                    progress: {
+                        total: 150,
+                        sent: 150,
+                        failed: 5
+                    },
+                    createdAt: "2024-01-15T09:00:00Z",
+                    completedAt: "2024-01-15T14:30:00Z"
+                },
+                {
+                    id: 2,
+                    name: "Newsletter Semanal",
+                    userId: 2,
+                    userName: "Maria Santos",
+                    status: "processing",
+                    progress: {
+                        total: 80,
+                        sent: 45,
+                        failed: 2
+                    },
+                    createdAt: "2024-01-20T10:15:00Z"
+                },
+                {
+                    id: 3,
+                    name: "Campanha Produto Novo",
+                    userId: 3,
+                    userName: "Pedro Oliveira",
+                    status: "pending",
+                    progress: {
+                        total: 200,
+                        sent: 0,
+                        failed: 0
+                    },
+                    createdAt: "2024-01-20T16:00:00Z"
+                }
+            ]
+       
+        };
+
+        // Inicialização do dashboard
+        document.addEventListener('DOMContentLoaded', async function () {
+
+            await fetchUsers();
+            await fetchSystemStats();
+            await fetchInstances();
+
+            // Configuração do menu lateral
+            const sidebarToggle = document.getElementById('sidebarToggle');
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+
+            sidebarToggle.addEventListener('click', function () {
+                sidebar.classList.toggle('active');
+                mainContent.classList.toggle('active');
             });
 
-            content.innerHTML = html;
-        }
+            // Navegação entre seções
+            const navLinks = document.querySelectorAll('.sidebar .nav-link');
+            const sections = document.querySelectorAll('.dashboard-section');
 
-        function updateDashboardSummary(instances, batches, users, messages) {
-            // Atualizar informações do sistema
-            updateLastUpdate();
-            document.getElementById('operationalMode').textContent = 'Normal';
-            document.getElementById('operationalMode').className = 'status-connected';
-            
-            // Atualizar métricas em tempo real
-            const metrics = window.dashboardManager?.getMetrics();
-            updateMetricsDisplay(metrics);
-        }
+            navLinks.forEach(link => {
+                link.addEventListener('click', function (e) {
+                    e.preventDefault();
 
-        function useEmergencyFallback() {
-            document.getElementById('operationalMode').textContent = 'Emergência';
-            document.getElementById('operationalMode').className = 'status-disconnected';
-            
-            // Forçar atualização das métricas
-            const metrics = window.dashboardManager?.getMetrics();
-            updateMetricsDisplay(metrics);
-        }
+                    // Remove active de todos os links
+                    navLinks.forEach(l => l.classList.remove('active'));
+                    // Adiciona active ao link clicado
+                    this.classList.add('active');
 
-        // =============================================
-        // INICIALIZAÇÃO
-        // =============================================
+                    // Oculta todas as seções
+                    sections.forEach(section => section.classList.add('d-none'));
 
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 Dashboard inicializado!');
-            
-            // Configurar event listeners para os botões
-            const buttons = document.querySelectorAll('.btn');
-            buttons.forEach(btn => {
-                btn.addEventListener('click', function() {
-                    // Feedback visual
-                    this.style.transform = 'scale(0.95)';
-                    setTimeout(() => {
-                        this.style.transform = '';
-                    }, 150);
+                    // Mostra a seção correspondente
+                    const targetSection = this.getAttribute('href').substring(1);
+                    document.getElementById(targetSection).classList.remove('d-none');
                 });
             });
 
-            // Iniciar carregamento automático após 2 segundos
-            setTimeout(() => {
-                if (window.dashboardManager) {
-                    dashboardManager.loadData();
-                }
-            }, 2000);
+            // Carregar dados iniciais
+            loadOverviewData();
+
+            loadBatchesData();
+            
+
+
+            // Configurar gráficos
+            initializeCharts();
         });
 
-        // Expor funções globalmente para os botões HTML
-        window.showMetrics = showMetrics;
-    </script>
+        // Funções para carregar dados
+        function loadOverviewData() {
+            // Atualizar estatísticas gerais
+            document.getElementById('totalUsers').textContent = mockData.systemStats.users;
+            document.getElementById('activeInstances').textContent = mockData.systemStats.instances.total;
+            document.getElementById('connectedInstances').textContent = mockData.systemStats.instances.connected;
+            document.getElementById('totalMessages').textContent = mockData.messageStats.total.toLocaleString();
+            document.getElementById('successRate').textContent = mockData.messageStats.successRate + '%';
+            document.getElementById('activeBatches').textContent = mockData.systemStats.batches.active;
+            document.getElementById('totalBatches').textContent = mockData.systemStats.batches.total;
+            document.getElementById('userGrowth').textContent = mockData.userStats.growth + '%';
+        }
 
-    <!-- Incluir o script otimi
-     
-    
-    
-    zado -->
-    <script src="js/dashboard-optimized.js"></script>
+        function loadUsersData() {
+            const tableBody = document.getElementById('usersTableBody');
+            tableBody.innerHTML = '';
+
+            mockData.users.forEach(user => {
+                const row = document.createElement('tr');
+
+                // Avatar e nome
+                const avatarInitial = user.name.split(' ').map(n => n[0]).join('').toUpperCase();
+
+                row.innerHTML = `
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="user-avatar me-2">${avatarInitial}</div>
+                            <div>${user.name}</div>
+                        </div>
+                    </td>
+                    <td>${user.email}</td>
+                    <td>
+                        <span class="badge ${user.role === 'admin' ? 'bg-warning' : 'bg-secondary'}">
+                            ${user.role === 'admin' ? 'Administrador' : 'Usuário'}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="status-badge ${user.isActive === true ? 'status-active' : 'status-inactive'}">
+                            ${user.isActive === true ? 'Ativo' : 'Inativo'}
+                        </span>
+                    </td>
+                    <td>${formatDate(user.lastLogin)}</td>
+                    <td>${user.instances}</td>
+                    <td>${user.batches}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary ms-1">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </td>
+                `;
+
+                tableBody.appendChild(row);
+            });
+
+            // Atualizar contadores
+            document.getElementById('usersShowing').textContent = mockData.users.length;
+            document.getElementById('usersTotal').textContent = mockData.users.length;
+        }
+
+        function loadInstancesData() {
+            const container = document.getElementById('instancesContainer');
+            container.innerHTML = '';
+
+            mockData.instances.forEach(instance => {
+                const card = document.createElement('div');
+                card.className = 'col-md-6 col-lg-4 mb-4';
+
+                const statusClass = instance.status === 'connected' ? 'status-active' : 'status-inactive';
+                const statusText = instance.status === 'connected' ? 'Conectada' : 'Desconectada';
+                const statusIcon = instance.status === 'connected' ? 'fa-check-circle' : 'fa-times-circle';
+
+                card.innerHTML = `
+                    <div class="card stat-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <h5 class="card-title">${instance.sessionName}</h5>
+                                <span class="status-badge ${statusClass}">
+                                    <i class="fas ${statusIcon} me-1"></i>${statusText}
+                                </span>
+                            </div>
+                            <p class="card-text">
+                                <i class="fas fa-user me-1 text-muted"></i>
+                                ${instance.userName}
+                            </p>
+                            <div class="row text-center mt-3">
+                                <div class="col-6">
+                                    <h4>${instance.groups}</h4>
+                                    <small class="text-muted">Grupos</small>
+                                </div>
+                                <div class="col-6">
+                                    <h4>${instance.contacts}</h4>
+                                    <small class="text-muted">Contatos</small>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <small class="text-muted">
+                                    Última conexão: ${formatDate(instance.lastConnection)}
+                                </small>
+                            </div>
+                            <div class="mt-3">
+                                <button class="btn btn-sm btn-outline-primary w-100">
+                                    <i class="fas fa-info-circle me-1"></i> Detalhes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        function loadBatchesData() {
+            const container = document.getElementById('batchesContainer');
+            container.innerHTML = '';
+
+            mockData.batches.forEach(batch => {
+                const card = document.createElement('div');
+                card.className = 'col-md-6 col-lg-4 mb-4';
+
+                let statusClass, statusText;
+                switch (batch.status) {
+                    case 'completed':
+                        statusClass = 'status-active';
+                        statusText = 'Concluído';
+                        break;
+                    case 'processing':
+                        statusClass = 'status-pending';
+                        statusText = 'Processando';
+                        break;
+                    case 'pending':
+                        statusClass = 'status-inactive';
+                        statusText = 'Pendente';
+                        break;
+                    default:
+                        statusClass = 'status-inactive';
+                        statusText = batch.status;
+                }
+
+                const progress = batch.progress.total > 0 ?
+                    Math.round((batch.progress.sent / batch.progress.total) * 100) : 0;
+
+                card.innerHTML = `
+                    <div class="card stat-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h5 class="card-title">${batch.name}</h5>
+                                <span class="status-badge ${statusClass}">${statusText}</span>
+                            </div>
+                            <p class="card-text">
+                                <i class="fas fa-user me-1 text-muted"></i>
+                                ${batch.userName}
+                            </p>
+                            
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar" role="progressbar" 
+                                    style="width: ${progress}%" 
+                                    aria-valuenow="${progress}" 
+                                    aria-valuemin="0" 
+                                    aria-valuemax="100">
+                                </div>
+                            </div>
+                            
+                            <div class="row text-center small">
+                                <div class="col-4">
+                                    <div>${batch.progress.sent}</div>
+                                    <div class="text-muted">Enviadas</div>
+                                </div>
+                                <div class="col-4">
+                                    <div>${batch.progress.failed}</div>
+                                    <div class="text-muted">Falhas</div>
+                                </div>
+                                <div class="col-4">
+                                    <div>${batch.progress.total}</div>
+                                    <div class="text-muted">Total</div>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-3">
+                                <small class="text-muted">
+                                    Criado: ${formatDate(batch.createdAt)}
+                                </small>
+                            </div>
+                            
+                            <div class="mt-3">
+                                <button class="btn btn-sm btn-outline-primary w-100">
+                                    <i class="fas fa-chart-bar me-1"></i> Ver Detalhes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        function initializeCharts() {
+            // Gráfico de atividade de usuários
+            const userActivityCtx = document.getElementById('userActivityChart').getContext('2d');
+            new Chart(userActivityCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Jan 15', 'Jan 16', 'Jan 17', 'Jan 18', 'Jan 19', 'Jan 20'],
+                    datasets: [
+                        {
+                            label: 'Usuários Ativos',
+                            data: [32, 35, 38, 36, 37, 38],
+                            borderColor: '#3498db',
+                            backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                            tension: 0.3,
+                            fill: true
+                        },
+                        {
+                            label: 'Novos Usuários',
+                            data: [2, 3, 1, 4, 2, 3],
+                            borderColor: '#2ecc71',
+                            backgroundColor: 'rgba(46, 204, 113, 0.1)',
+                            tension: 0.3,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    }
+                }
+            });
+
+            // Gráfico de status das instâncias
+            const instanceStatusCtx = document.getElementById('instanceStatusChart').getContext('2d');
+            new Chart(instanceStatusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Conectadas', 'Desconectadas'],
+                    datasets: [{
+                        data: [19, 9],
+                        backgroundColor: [
+                            '#27ae60',
+                            '#e74c3c'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+
+            // Gráfico de atividade de disparos
+            const batchActivityCtx = document.getElementById('batchActivityChart').getContext('2d');
+            new Chart(batchActivityCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Jan 14', 'Jan 15', 'Jan 16', 'Jan 17', 'Jan 18', 'Jan 19', 'Jan 20'],
+                    datasets: [{
+                        label: 'Disparos Concluídos',
+                        data: [8, 12, 6, 10, 14, 9, 11],
+                        backgroundColor: '#3498db'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        // Funções auxiliares
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('pt-BR') + ' ' + date.toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // Implementar funções para buscar dados reais da API
+        async function fetchSystemStats() {
+            try {
+                // Substituir pela chamada real à API
+                const response = await apiRequest('/api/admin/system/stats');
+                const data = await response;
+                mockData.systemStats = data.stats; // Atualiza os dados mock com os dados reais
+                loadOverviewData(); // Recarrega os dados da visão geral com os dados reais
+                return data.stats;
+            } catch (error) {
+                console.error('Erro ao buscar estatísticas do sistema:', error);
+                return mockData.systemStats;
+            }
+        }
+
+        async function fetchUsers() {
+            try {
+                // Substituir pela chamada real à API
+                const response = await apiRequest('/api/admin/users');
+                const data = await response
+                mockData.users = data.users; // Atualiza os dados mock com os dados reais
+                loadUsersData(); // Recarrega a tabela de usuários com os dados reais
+                return data.users;
+            } catch (error) {
+                console.error('Erro ao buscar usuários:', error);
+                return mockData.users;
+            }
+        }
+        
+        async function fetchInstances() {
+            try {
+                // Substituir pela chamada real à API
+                const response = await apiRequest('/api/whatsapp/instances');
+                const data = await response
+                mockData.instances = data.instances; // Atualiza os dados mock com os dados reais
+                loadInstancesData(); // Recarrega a tabela de instâncias com os dados reais
+                return data.instances;
+            } catch (error) {
+                console.error('Erro ao buscar instâncias:', error);
+                return mockData.instances;
+            }
+        }
+        // Adicionar mais funções de fetch conforme necessário
+    </script>
 </body>
+
 </html>

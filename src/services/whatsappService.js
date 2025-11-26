@@ -216,7 +216,9 @@ class WhatsAppService {
             // ✅ SALVAR CREDENCIS CORRETAMENTE
             socket.ev.on('creds.update', saveCreds);
 
-            socket.ev.on("messages.upsert", this.handleMessages.bind(this));
+            socket.ev.on("messages.upsert", (data) => {
+                this.handleMessages(sessionName, data);
+            });
             // ✅ CONFIGURAR EVENTOS
             this.setupBaileysEvents(socket, sessionName, instanceId, userId, saveCreds);
 
@@ -225,6 +227,13 @@ class WhatsAppService {
             this.authStates.set(sessionName, { state, saveCreds });
             this.reconnectionAttempts.set(sessionName, 0);
             this.connectionStates.set(sessionName, 'connecting');
+
+            this.instanceInfo = this.instanceInfo || {};
+            this.instanceInfo[sessionName] = {
+                userId,
+                instanceId,
+                sessionName
+            };
 
             console.log(`✅ [${sessionName}] Cliente Baileys totalmente configurado, aguardando QR Code...`);
 
@@ -465,72 +474,147 @@ class WhatsAppService {
         }
     }
 
-    async handleMessages({ messages, type }) {
-        if (type !== "notify") return;
-        
+    async handleMessages(sessionName, data) {
+        if (!data || typeof data !== 'object') {
+            console.error(`❌ [${sessionName}] Dados inválidos no handleMessages:`, data);
+            return;
+        }
 
+        const { messages, type } = data;
+        if (type !== "notify") return;
+
+        const instanceMeta = this.instanceInfo?.[sessionName];
+
+        if (!instanceMeta) {
+            console.error(`❌ Metadados da instância não encontrados para ${sessionName}`);
+            return;
+        }
+
+        const userId = instanceMeta.userId;
 
         for (const msg of messages) {
-            const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
-
-             try {
-               
-                if (msg.key && msg.message) {
-                    // Processar mensagem normalmente
-                }
-            } catch (error) {
-                if (error.message.includes('Bad MAC') || error.message.includes('Failed to decrypt')) {
-                    console.warn(`⚠️ [${sessionName}] Erro de criptografia ignorado:`, error.message);
-                    // Não propaga o erro para evitar crash
-                    return;
-                }
-                throw error;
-            }
-        
-
-            // Extrair informações do participante
+            console.log(`📩 [${sessionName}] Mensagem recebida:`, msg);
             const participantInfo = this.extractParticipantInfo(msg);
-            // console.log("Salvando na tabela...")
+
             if (participantInfo) {
                 try {
-                    // Salvar/atualizar participante
-                    await Participant.upsertParticipant(participantInfo);
-                    // console.log(`Participante processado: ${participantInfo.pushName}`);
+                    await Participant.upsertParticipant(
+                        participantInfo,
+                        userId
+                    );
                 } catch (error) {
                     console.error('Erro ao salvar participante:', error);
                 }
             }
-            
-
-            // console.log(JSON.stringify(msg));
         }
     }
+
 
     // Função auxiliar para extrair informações do participante
     extractParticipantInfo(msg) {
-        try {
-            const participant = msg.key?.participant;
-            const phoneNumber = msg.key?.participantPn;
-            const pushName = msg.pushName;
-            const remoteJid = msg.key?.remoteJid;
+    try {
+        const remoteJid =  msg.key?.remoteJid;
+        const fromGroup = remoteJid?.includes('@g.us');
+        // if (fromGroup) extractGroupInfo( msg.key?.remoteJid)
 
-            if (!participant || !phoneNumber || !pushName || !remoteJid) {
-                // console.log('Dados do participante incompletos');
-                return null;
+        let jid = remoteJid = fromGroup ? msg.key?.participant : remoteJid;
+        if (!jid) return null;
+
+        let phone = '';
+        let participantType = 'whatsapp';
+
+        // ✅ DETECTAR TIPO DE PARTICIPANTE
+        if (jid.includes('@lid')) {
+            // LinkedIn ID - usar participantAlt se disponível
+            participantType = 'linkedin';
+            if (msg.key?.participantAlt) {
+                phone = this.normalizePhoneNumber(
+                    msg.key.participantAlt.replace('@s.whatsapp.net', '')
+                );
+            } else {
+                phone = jid.replace('@lid', '');
             }
-
-            return {
-                participantId: participant,
-                phoneNumber: phoneNumber.replace('@s.whatsapp.net', ''),
-                pushName: pushName.trim(),
-                remoteJid: remoteJid
-            };
-        } catch (error) {
-            console.error('Erro ao extrair informações do participante:', error);
-            return null;
+        } else {
+            // WhatsApp normal
+            phone = this.normalizePhoneNumber(
+                jid.replace('@s.whatsapp.net', '').replace('@c.us', '')
+            );
         }
+
+        const pushName = msg.pushName || msg.notifyName || phone;
+
+        return {
+            participantId: jid,
+            phoneNumber: phone,
+            pushName: pushName.trim(),
+            remoteJid: remoteJid,
+            participantType: participantType // ✅ novo campo para identificar tipo
+        };
+
+    } catch (error) {
+        console.error('Erro ao extrair informações do participante:', error);
+        return null;
+    }
+}
+
+// ✅ NOVO MÉTODO: Normalizar número de telefone
+normalizePhoneNumber(phone) {
+    if (!phone) return '';
+
+    // Remover todos os caracteres não numéricos, exceto o +
+    let normalized = phone.replace(/[^\d+]/g, '');
+
+    // Se não tem código do país, adicionar padrão Brasil (55)
+    if (normalized.startsWith('+')) {
+        // Já tem código internacional, manter como está
+        return normalized;
+    } else if (normalized.startsWith('55') && normalized.length >= 12) {
+        // Já tem código do Brasil, adicionar +
+        return '+' + normalized;
+    } else if (normalized.length >= 10) {
+        // Número nacional, adicionar código do Brasil
+        // Remover possível 0 inicial do DDD
+        if (normalized.startsWith('0')) {
+            normalized = normalized.substring(1);
+        }
+        return '+55' + normalized;
     }
 
+    // Se for muito curto, retornar como está
+    return phone;
+}
+
+extractGroupInfo(remoteJid) {
+    try {
+        if (!remoteJid || !remoteJid.includes('@g.us')) {
+            return null; // Não é um grupo
+        }
+
+        // Extrair partes do JID do grupo
+        const parts = remoteJid.split('@');
+        const groupId = parts[0]; // '5521997757028-1608758202'
+        const domain = parts[1]; // 'g.us'
+
+        // Extrair telefone do criador (se disponível no formato)
+        let creatorPhone = null;
+        if (groupId.includes('-')) {
+            const phoneParts = groupId.split('-');
+            creatorPhone = this.normalizePhoneNumber(phoneParts[0]); // '5521997757028'
+        }
+
+        return {
+            groupJid: remoteJid,
+            groupId: groupId,
+            domain: domain,
+            creatorPhone: creatorPhone,
+            isGroup: true
+        };
+
+    } catch (error) {
+        console.error('Erro ao extrair informações do grupo:', error);
+        return null;
+    }
+}
 
 
     async handleReconnection(sessionName, userId, instanceId) {
@@ -621,6 +705,8 @@ class WhatsAppService {
 
     // 📁 services/whatsappService.js - ATUALIZAR O MÉTODO loadGroupsFromWhatsApp
 
+    // 📁 services/whatsappService.js - ATUALIZAR O MÉTODO loadGroupsFromWhatsApp
+
     async loadGroupsFromWhatsApp(sessionName, userId) {
         try {
             const socket = this.sockets.get(sessionName);
@@ -638,6 +724,8 @@ class WhatsAppService {
             }
 
             let groupCount = 0;
+            let updatedCount = 0;
+            let createdCount = 0;
             const results = [];
 
             for (const [jid, group] of Object.entries(groups)) {
@@ -650,34 +738,69 @@ class WhatsAppService {
 
                     // Dados do grupo com instância
                     const groupData = {
-                        userId: userId, // ✅ GARANTIR que o userId está incluído
+                        userId: userId,
                         name: groupName,
                         description: group.desc || '',
                         contacts: contacts,
                         contactCount: contacts.length,
                         participantCount: participants.length,
-                        jid: jid,
+                        jid: jid, // ✅ CHAVE ÚNICA PARA EVITAR DUPLICAÇÃO
                         source: 'whatsapp',
-                        whatsappInstanceId: instanceId, // ✅ REFERÊNCIA À INSTÂNCIA
+                        whatsappInstanceId: instanceId,
                         groupType: this.determineGroupType(group),
                         syncStatus: 'synced',
-                        lastSync: new Date()
+                        lastSync: new Date(),
+                        // ✅ ATUALIZAR METADADOS ADICIONAIS
+                        metadata: {
+                            creation: group.creation,
+                            owner: group.owner,
+                            restrict: group.restrict,
+                            announce: group.announce,
+                            participantsCount: participants.length,
+                            isCommunity: group.isCommunity || false
+                        }
                     };
 
-                    // Upsert garantindo usuário e instância
-                    const savedGroup = await ContactGroup.findOneAndUpdate(
-                        {
-                            userId: userId,
-                            jid: jid,
-                            whatsappInstanceId: instanceId // ✅ FILTRAR POR INSTÂNCIA TAMBÉM
-                        },
-                        groupData,
-                        {
-                            upsert: true,
-                            new: true,
-                            runValidators: true
-                        }
-                    );
+                    // ✅ UPSERT MELHORADO - BUSCAR POR JID E INSTÂNCIA
+                    const filter = {
+                        userId: userId,
+                        jid: jid,
+                        whatsappInstanceId: instanceId // ✅ GARANTIR QUE É DA MESMA INSTÂNCIA
+                    };
+
+                    const existingGroup = await ContactGroup.findOne(filter);
+
+                    if (existingGroup) {
+                        // ✅ ATUALIZAR GRUPO EXISTENTE
+                        const updatedGroup = await ContactGroup.findOneAndUpdate(
+                            filter,
+                            {
+                                $set: {
+                                    name: groupData.name,
+                                    description: groupData.description,
+                                    contacts: groupData.contacts,
+                                    contactCount: groupData.contactCount,
+                                    participantCount: groupData.participantCount,
+                                    syncStatus: 'synced',
+                                    lastSync: new Date(),
+                                    metadata: groupData.metadata
+                                }
+                            },
+                            {
+                                new: true,
+                                runValidators: true
+                            }
+                        );
+
+                        updatedCount++;
+                        console.log(`🔄 [${sessionName}] Grupo atualizado: ${groupName}`);
+
+                    } else {
+                        // ✅ CRIAR NOVO GRUPO
+                        const newGroup = await ContactGroup.create(groupData);
+                        createdCount++;
+                        console.log(`✅ [${sessionName}] Novo grupo criado: ${groupName}`);
+                    }
 
                     groupCount++;
                     results.push({
@@ -685,19 +808,20 @@ class WhatsAppService {
                         name: groupName,
                         participants: participants.length,
                         contacts: contacts.length,
-                        groupId: savedGroup._id
+                        action: existingGroup ? 'updated' : 'created'
                     });
-
-                    console.log(`✅ [${sessionName}] Grupo salvo: ${groupName}`);
 
                 } catch (groupError) {
                     console.error(`❌ [${sessionName}] Erro no grupo ${jid}:`, groupError.message);
                 }
             }
 
-            console.log(`🎉 [${sessionName}] ${groupCount} grupos processados para usuário ${userId}`);
+            console.log(`🎉 [${sessionName}] Sincronização concluída: ${groupCount} grupos processados (${createdCount} novos, ${updatedCount} atualizados)`);
+
             return {
                 total: groupCount,
+                created: createdCount,
+                updated: updatedCount,
                 results: results
             };
 
@@ -752,6 +876,13 @@ class WhatsAppService {
 
             // Recriar a instância do zero
             await this.initializeClient(sessionName, userId, instance._id);
+
+            this.instanceInfo = this.instanceInfo || {};
+            this.instanceInfo[sessionName] = {
+                userId,
+                instanceId,
+                sessionName
+            };
 
             console.log(`✅ [WhatsAppService] Instância recriada: ${sessionName}`);
             return true;

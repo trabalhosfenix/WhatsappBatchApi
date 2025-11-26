@@ -54,6 +54,12 @@ body {
   color: var(--theme-text);
 }
 
+nav.nav {
+    justify-content: flex-end;
+    display: flex;
+    gap: 10px;
+}
+
 /* Header melhorado com melhor contraste */
 .header {
   background: linear-gradient(135deg, var(--theme-dark), var(--theme-primary));

@@ -1,5 +1,7 @@
 // services/messageControlService.js
 const { handleMessage } = require("../controllers/messageController");
+const MessageLog = require('../models/MessageLog');
+
 
 class MessageControlService {
     constructor(whatsappService) {
@@ -32,6 +34,19 @@ class MessageControlService {
                 this.messageCache.add(uniqueId);
 
                 try {
+                    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+                    if (!msg.key.fromMe) {
+                        await MessageLog.create({
+                            sessionName,
+                            jid: msg.key.remoteJid,
+                            message: text,
+                            direction: 'incoming',
+                            status: 'received',
+                            messageId: msg.key.id,
+                            senderName: msg.pushName || msg.notifyName || 'Contato',
+                            timestamp: new Date()
+                        });
+                    }
                     await handleMessage(socket, msg);
                 } catch (error) {
                     console.error('❌ Erro no processamento:', error);

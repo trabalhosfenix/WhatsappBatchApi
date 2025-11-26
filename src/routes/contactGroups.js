@@ -19,4 +19,9 @@ router.get('/instance/:instanceId', contactGroupController.getGroupsByInstance);
 router.post('/instance/:instanceId/sync', contactGroupController.syncInstanceGroups);
 router.get('/filters/advanced', contactGroupController.getGroupsWithFilters);
 
+// ✅ NOVAS ROTAS PARA GERENCIAR DUPLICAÇÃO
+router.get('/debug/duplicates', contactGroupController.checkDuplicates);
+router.delete('/cleanup/duplicates/instance/:instanceId', contactGroupController.cleanDuplicateGroups);
+router.delete('/cleanup/duplicates', contactGroupController.cleanDuplicateGroups);
+
 module.exports = router;

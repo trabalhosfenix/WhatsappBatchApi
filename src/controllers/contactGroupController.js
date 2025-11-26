@@ -217,13 +217,14 @@ exports.getGroupsByInstance = async (req, res) => {
 /**
  * Sincronizar grupos de uma instância específica
  */
+
 exports.syncInstanceGroups = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { instanceId } = req.params;
     const userId = req.user._id;
 
     const instance = await WhatsAppInstance.findOne({
-      _id: id,
+      _id: instanceId,
       userId: userId
     });
 
@@ -234,19 +235,62 @@ exports.syncInstanceGroups = async (req, res) => {
       });
     }
 
+    if (instance.status !== 'connected') {
+      return res.status(400).json({
+        success: false,
+        error: 'Instância não está conectada'
+      });
+    }
+
+    // ✅ VERIFICAR SE JÁ EXISTEM GRUPOS DESTA INSTÂNCIA
+    const existingGroupsCount = await ContactGroup.countDocuments({
+      userId: userId,
+      whatsappInstanceId: instanceId,
+      source: 'whatsapp'
+    });
+
+    console.log(`📊 [Sync] ${existingGroupsCount} grupos existentes para a instância ${instance.sessionName}`);
+
+    // ✅ CHAMAR O SERVIÇO DO WHATSAPP PARA SINCRONIZAR
+    const whatsappService = require('../services/whatsappService');
     const result = await whatsappService.loadGroupsFromWhatsApp(
       instance.sessionName,
       userId
     );
 
+    // ✅ BUSCAR ESTATÍSTICAS ATUALIZADAS
+    const totalGroups = await ContactGroup.countDocuments({
+      userId: userId,
+      whatsappInstanceId: instanceId,
+      source: 'whatsapp'
+    });
+
     res.json({
       success: true,
-      message: `${result.total} grupos sincronizados`,
-      data: result
+      message: `Sincronização concluída: ${result.total} grupos processados`,
+      data: {
+        ...result,
+        existingBefore: existingGroupsCount,
+        totalAfter: totalGroups,
+        instance: {
+          _id: instance._id,
+          sessionName: instance.sessionName,
+          status: instance.status
+        }
+      }
     });
 
   } catch (error) {
     console.error('❌ Erro ao sincronizar grupos:', error);
+
+    // ✅ TRATAR ERRO DE DUPLICATA DE FORMA ESPECÍFICA
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Conflito de duplicação detectado. Grupo já existe para esta instância.'
+      });
+    }
+
     res.status(500).json({
       success: false,
       error: error.message
@@ -357,6 +401,137 @@ exports.getGroupsWithFilters = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Erro ao carregar grupos'
+    });
+  }
+};
+
+// 📁 controllers/contactGroupController.js - ADICIONAR MÉTODO DE LIMPEZA
+
+/**
+ * Limpar grupos duplicados (para uso administrativo)
+ */
+exports.cleanDuplicateGroups = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { instanceId } = req.params;
+
+    console.log(`🧹 [Cleanup] Iniciando limpeza de duplicados para usuário: ${userId}`);
+
+    // ✅ ENCONTRAR GRUPOS DUPLICADOS
+    const duplicates = await ContactGroup.aggregate([
+      {
+        $match: {
+          userId: mongoose.Types.ObjectId(userId),
+          ...(instanceId && { whatsappInstanceId: mongoose.Types.ObjectId(instanceId) }),
+          jid: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: { jid: "$jid", whatsappInstanceId: "$whatsappInstanceId" },
+          count: { $sum: 1 },
+          docs: { $push: "$_id" }
+        }
+      },
+      {
+        $match: {
+          count: { $gt: 1 }
+        }
+      }
+    ]);
+
+    console.log(`📊 [Cleanup] Encontrados ${duplicates.length} grupos com duplicatas`);
+
+    let deletedCount = 0;
+
+    // ✅ MANTER APENAS O GRUPO MAIS RECENTE DE CADA DUPLICATA
+    for (const duplicate of duplicates) {
+      // Manter o documento mais recente, deletar os outros
+      const docsToKeep = duplicate.docs.slice(0, 1); // Primeiro documento (mais recente)
+      const docsToDelete = duplicate.docs.slice(1); // Restante para deletar
+
+      if (docsToDelete.length > 0) {
+        await ContactGroup.deleteMany({
+          _id: { $in: docsToDelete }
+        });
+
+        deletedCount += docsToDelete.length;
+        console.log(`🗑️ [Cleanup] Deletados ${docsToDelete.length} duplicados do grupo ${duplicate._id.jid}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Limpeza concluída: ${deletedCount} grupos duplicados removidos`,
+      data: {
+        duplicatesFound: duplicates.length,
+        deletedCount: deletedCount,
+        remainingGroups: await ContactGroup.countDocuments({ userId: userId })
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro na limpeza de duplicados:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Verificar duplicatas (para debug)
+ */
+exports.checkDuplicates = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { instanceId } = req.query;
+
+    const duplicates = await ContactGroup.aggregate([
+      {
+        $match: {
+          userId: mongoose.Types.ObjectId(userId),
+          ...(instanceId && { whatsappInstanceId: mongoose.Types.ObjectId(instanceId) }),
+          jid: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: { jid: "$jid", whatsappInstanceId: "$whatsappInstanceId" },
+          count: { $sum: 1 },
+          groups: {
+            $push: {
+              _id: "$_id",
+              name: "$name",
+              createdAt: "$createdAt",
+              updatedAt: "$updatedAt"
+            }
+          }
+        }
+      },
+      {
+        $match: {
+          count: { $gt: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalDuplicates: duplicates.length,
+        duplicates: duplicates
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao verificar duplicatas:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 };

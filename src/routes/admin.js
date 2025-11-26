@@ -50,7 +50,7 @@ router.get('/users/stats', async (req, res) => {
 router.get('/users', async (req, res) => {
     try {
         const users = await User.find()
-            .select('name email role status createdAt lastLogin')
+            .select('-password')
             .sort({ createdAt: -1 });
 
         res.json({
@@ -121,6 +121,62 @@ router.get('/system/stats', async (req, res) => {
                     active: activeBatches
                 }
             }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// routes/admin.js - Adicionar estas rotas
+
+// Estatísticas de instâncias
+router.get('/instances/stats', async (req, res) => {
+    try {
+        const totalInstances = await WhatsAppInstance.countDocuments();
+        const connectedInstances = await WhatsAppInstance.countDocuments({ status: 'connected' });
+        
+        res.json({
+            success: true,
+            stats: {
+                total: totalInstances,
+                connected: connectedInstances,
+                disconnected: totalInstances - connectedInstances
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Listar todas as instâncias com detalhes
+router.get('/instances/detailed', async (req, res) => {
+    try {
+        const instances = await WhatsAppInstance.find()
+            .populate('userId', 'name email')
+            .select('sessionName status userId createdAt')
+            .sort({ createdAt: -1 });
+
+        // Adicionar contadores de grupos e contatos
+        const instancesWithCounts = await Promise.all(
+            instances.map(async (instance) => {
+                const groupsCount = await ContactGroup.countDocuments({ 
+                    whatsappInstanceId: instance._id 
+                });
+                const contactsCount = await ContactCache.countDocuments({
+                    sessionName: instance.sessionName
+                });
+
+                return {
+                    ...instance.toObject(),
+                    groupsCount,
+                    contactsCount
+                };
+            })
+        );
+
+        res.json({
+            success: true,
+            instances: instancesWithCounts
         });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });

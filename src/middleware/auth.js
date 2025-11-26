@@ -41,5 +41,15 @@ const auth = async (req, res, next) => {
   }
 };
 
+const requireAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ 
+            success: false, 
+            error: 'Acesso negado. Apenas administradores.' 
+        });
+    }
+    next();
+};
+
 // ✅ CORREÇÃO: Exportar como objeto
 module.exports = { auth };

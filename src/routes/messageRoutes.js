@@ -5,6 +5,7 @@ const UnifiedTrackingService = require('../services/unifiedTrackingService'); //
 const whatsappService = require('../services/whatsappService');
 const { auth } = require('../middleware/auth');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
+const MessageLog = require('../models/MessageLog');
 
 // ✅ USAR UNIFIED TRACKING SERVICE
 const unifiedTrackingService = new UnifiedTrackingService(whatsappService);
@@ -105,6 +106,73 @@ router.get('/tracking/active', async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// ✅ ENVIAR MENSAGEM ÚNICA
+router.post('/send', async (req, res) => {
+  try {
+    const { jid, message, instanceId, sessionName } = req.body;
+    if (!jid || !message) {
+      return res.status(400).json({ success: false, error: 'jid e message são obrigatórios' });
+    }
+    const userId = req.user._id;
+    let instance = null;
+    if (sessionName) {
+      instance = await WhatsAppInstance.findOne({ sessionName, userId });
+    } else if (instanceId) {
+      instance = await WhatsAppInstance.findOne({ _id: instanceId, userId });
+    }
+    if (!instance) {
+      return res.status(404).json({ success: false, error: 'Instância não encontrada' });
+    }
+    if (instance.status !== 'connected') {
+      return res.status(400).json({ success: false, error: 'Instância não está conectada' });
+    }
+    const isConnected = await whatsappService.isConnected(instance.sessionName);
+    if (!isConnected) {
+      return res.status(400).json({ success: false, error: 'Instância não está conectada (socket indisponível)' });
+    }
+    const result = await whatsappService.sendMessage(instance.sessionName, jid, message);
+    try {
+      await MessageLog.create({
+        sessionName: instance.sessionName,
+        jid,
+        message,
+        direction: 'outgoing',
+        status: 'sent',
+        messageId: result?.key?.id,
+        senderName: 'me',
+        timestamp: new Date()
+      });
+    } catch {}
+    res.json({ success: true, messageId: result?.key?.id });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// ✅ HISTÓRICO DE MENSAGENS
+router.get('/history', async (req, res) => {
+  try {
+    const { jid, instanceId, sessionName } = req.query;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    if (!jid) {
+      return res.status(400).json({ success: false, error: 'jid é obrigatório' });
+    }
+    const userId = req.user._id;
+    let instance = null;
+    if (sessionName) {
+      instance = await WhatsAppInstance.findOne({ sessionName, userId });
+    } else if (instanceId) {
+      instance = await WhatsAppInstance.findOne({ _id: instanceId, userId });
+    }
+    const filter = { jid };
+    if (instance) filter.sessionName = instance.sessionName;
+    const logs = await MessageLog.find(filter).sort({ timestamp: 1 }).limit(limit).lean();
+    res.json({ success: true, messages: logs });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
   }
 });
 

@@ -2,6 +2,9 @@ const ContactGroup = require('../models/ContactGroup');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const whatsappBaileysService = require('../services/whatsappService');
 const messageControlService = require('../services/messageControlService');
+const User = require('../models/User');
+// const limite = require('../models/Limite');
+
 
 
 console.log('✅ WhatsAppController carregado - VERSÃO CORRIGIDA');
@@ -227,6 +230,8 @@ exports.resetInstance = async (req, res) => {
         });
     }
 };
+
+
 exports.getInstances = async (req, res) => {
   try {
     console.log('📋 GET /api/whatsapp/instances chamado');
@@ -236,23 +241,119 @@ exports.getInstances = async (req, res) => {
 
     console.log(`📊 Encontradas ${instances.length} instâncias`);
 
+    // ✅ CORREÇÃO: Buscar todos os usuários de uma vez
+    const userIds = [...new Set(instances.map(instance => instance.userId))];
+    const users = await User.find({ _id: { $in: userIds } }).select('name email');
     
+    const userMap = users.reduce((map, user) => {
+      map[user._id.toString()] = user;
+      return map;
+    }, {});
+
+    // ✅ ADIÇÃO: Buscar totais de grupos e contatos para cada instância
+    const instancesWithDetails = await Promise.all(
+      instances.map(async (instance) => {
+        const user = userMap[instance.userId.toString()];
+        
+        // Buscar estatísticas de grupos
+        const groupStats = await ContactGroup.aggregate([
+          {
+            $match: {
+              userId: instance.userId,
+              whatsappInstanceId: instance._id,
+              source: 'whatsapp',
+              isActive: true
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              totalGroups: { $sum: 1 },
+              totalContacts: { $sum: '$contactCount' },
+              totalParticipants: { $sum: '$participantCount' },
+              activeGroups: {
+                $sum: {
+                  $cond: [{ $eq: ['$syncStatus', 'synced'] }, 1, 0]
+                }
+              }
+            }
+          }
+        ]);
+
+        // Buscar estatísticas de contatos únicos (evitando duplicatas entre grupos)
+        const uniqueContactsStats = await ContactGroup.aggregate([
+          {
+            $match: {
+              userId: instance.userId,
+              whatsappInstanceId: instance._id,
+              source: 'whatsapp',
+              isActive: true
+            }
+          },
+          { $unwind: '$contacts' },
+          {
+            $group: {
+              _id: '$contacts.phone', // Agrupa por telefone único
+              contact: { $first: '$contacts' }
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              uniqueContacts: { $sum: 1 },
+              businessContacts: {
+                $sum: {
+                  $cond: [{ $eq: ['$contact.isBusiness', true] }, 1, 0]
+                }
+              }
+            }
+          }
+        ]);
+
+        const stats = groupStats.length > 0 ? groupStats[0] : {
+          totalGroups: 0,
+          totalContacts: 0,
+          totalParticipants: 0,
+          activeGroups: 0
+        };
+
+        const uniqueStats = uniqueContactsStats.length > 0 ? uniqueContactsStats[0] : {
+          uniqueContacts: 0,
+          businessContacts: 0
+        };
+
+        return {
+          _id: instance._id,
+          name: user?.name || 'Unknown',
+          email: user?.email || 'Unknown',
+          sessionName: instance.sessionName,
+          status: instance.status,
+          qrCode: instance.qrCode,
+          phoneNumber: instance.phoneNumber,
+          lastConnection: instance.lastConnection,
+          createdAt: instance.createdAt,
+          updatedAt: instance.updatedAt,
+          // ✅ NOVOS CAMPOS ADICIONADOS
+          statistics: {
+            groups: {
+              total: stats.totalGroups,
+              active: stats.activeGroups,
+              participants: stats.totalParticipants
+            },
+            contacts: {
+              total: stats.totalContacts,
+              unique: uniqueStats.uniqueContacts,
+              business: uniqueStats.businessContacts
+            }
+          }
+        };
+      })
+    );
+
     res.json({
       success: true,
-      instances: instances.map(instance => ({
-        _id: instance._id,
-        sessionName: instance.sessionName,
-        status: instance.status,
-        qrCode: instance.qrCode,
-        phoneNumber: instance.phoneNumber,
-        lastConnection: instance.lastConnection,
-        createdAt: instance.createdAt,
-        updatedAt: instance.updatedAt
-      }))
+      instances: instancesWithDetails
     });
-
-
-
 
   } catch (error) {
     console.error('❌ Erro ao buscar instâncias:', error);

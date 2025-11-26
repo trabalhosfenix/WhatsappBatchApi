@@ -57,15 +57,14 @@ participantSchema.index({ remoteJid: 1 });
 participantSchema.index({ lastMessageTimestamp: -1 });
 
 // Método estático para upsert (inserir ou atualizar)
-participantSchema.statics.upsertParticipant = async function(participantData) {
+participantSchema.statics.upsertParticipant = async function(participantData, userId) {
   const { participantId, phoneNumber, pushName, remoteJid } = participantData;
-  
-  const existingParticipant = await this.findOne({ participantId });
-  
+
+  const existingParticipant = await this.findOne({ participantId, user: userId });
+
   if (existingParticipant) {
-    // Atualiza dados existentes
     return await this.findOneAndUpdate(
-      { participantId },
+      { participantId, user: userId },
       {
         $set: {
           pushName: pushName || existingParticipant.pushName,
@@ -77,17 +76,18 @@ participantSchema.statics.upsertParticipant = async function(participantData) {
       { new: true }
     );
   } else {
-    // Cria novo participante
     return await this.create({
       participantId,
       phoneNumber,
       pushName,
       remoteJid,
+      user: userId,   // <-- AGORA ESTÁ SENDO SALVO!
       firstMessageTimestamp: new Date(),
       lastMessageTimestamp: new Date()
     });
   }
 };
+
 
 // Método para JSON seguro (sem campos internos)
 participantSchema.methods.toJSON = function() {

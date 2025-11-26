@@ -16,6 +16,7 @@ const messageControlRoutes = require('./routes/messageControl.js');
 const adminRoutes = require('./routes/admin.js');
 const tarefasRoutes = require('./routes/tarefas.js');
 const participantRoutes = require('./routes/participants.js');
+const messageRoutes = require('./routes/messageRoutes.js');
 
 // ✅ CORREÇÃO: Conectar ao MongoDB
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/whatsapp-batch-api';
@@ -85,6 +86,7 @@ app.use('/api/message-control', messageControlRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/tarefas', tarefasRoutes); // ✅ CORREÇÃO: caminho correto
 app.use('/api/participants', participantRoutes);
+app.use('/api/messages', messageRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -113,6 +115,9 @@ app.get('/', (req, res) => {
     }
   });
 });
+
+// routes/index.js - Adicionar rota do dashboard
+// app.use('/api/admin', require('./admin'));
 
 // Adicione na seção de rotas:
 app.use('/api/media', mediaBatchRoutes);

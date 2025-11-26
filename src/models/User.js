@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema({
     minlength: 2,
     maxlength: 50
   },
+
   email: {
     type: String,
     required: true,
@@ -16,23 +17,32 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true
   },
+
   password: {
     type: String,
     required: true,
     minlength: 6
   },
+
   role: {
     type: String,
     enum: ['user', 'admin'],
     default: 'user'
   },
+
+  lastLogin: {
+    type: Date,
+    
+  },
+
   whatsappInstances: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'WhatsAppInstance'
   }],
+
   isActive: {
     type: Boolean,
-    default: true
+    default: false
   }
 }, {
   timestamps: true

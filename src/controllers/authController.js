@@ -54,13 +54,23 @@ exports.login = async (req, res) => {
 
     const token = generateToken(user._id);
 
+    // Atualizar o último login
+    user.lastLogin = new Date();
+    await user.save();
+
+    // atualizar isActive
+    user.isActive = true;
+    await user.save();
+
     res.json({
       success: true,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        isActive: user.isActive,
+        lastLogin: user.lastLogin
       },
       token
     });

@@ -3,6 +3,7 @@ const express = require('express');
 const { auth } = require('../middleware/auth');
 const whatsappController = require('../controllers/whatsappController');
 
+
 const router = express.Router();
 
 // Todas as rotas exigem autenticação

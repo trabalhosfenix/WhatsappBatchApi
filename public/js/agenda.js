@@ -5,6 +5,7 @@ class AgendaManager {
         this.currentSection = 'contactsSection';
         this.contacts = [];
         this.groups = [];
+        this.contactGroups = [];
         this.instances = [];
         this.filters = {
             search: '',
@@ -16,7 +17,7 @@ class AgendaManager {
 
     init() {
         console.log('📍 Inicializando AgendaManager...');
-        
+
         if (!this.checkAuth()) {
             return false;
         }
@@ -24,7 +25,12 @@ class AgendaManager {
         this.setupEventListeners();
         this.loadInitialData();
         this.updateUserProfile();
-        
+
+        // ✅ DEBUG TEMPORÁRIO
+        setTimeout(() => {
+            this.debugCheckData();
+        }, 1000);
+
         return true;
     }
 
@@ -75,7 +81,12 @@ class AgendaManager {
             }
 
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                let errorMsg = `HTTP error! status: ${response.status}`;
+                try {
+                    const errBody = await response.json();
+                    if (errBody && errBody.error) errorMsg = errBody.error;
+                } catch { }
+                throw new Error(errorMsg);
             }
 
             const data = await response.json();
@@ -144,13 +155,22 @@ class AgendaManager {
         document.getElementById('searchGroups')?.addEventListener('input', (e) => {
             this.filterGroups(e.target.value);
         });
+        document.getElementById('filterGroupPlatform')?.addEventListener('change', (e) => {
+            this.filterGroupsByPlatform(e.target.value);
+        });
+        document.getElementById('filterGroupInstance')?.addEventListener('change', (e) => {
+            this.filterGroupsByInstance(e.target.value);
+        });
+        document.getElementById('sortGroups')?.addEventListener('change', (e) => {
+            this.sortGroups(e.target.value);
+        });
 
         // Modal de novo contato
         document.getElementById('newContactForm')?.addEventListener('submit', (e) => this.saveNewContact(e));
-        
+
         // Logout
         document.getElementById('logoutBtn')?.addEventListener('click', () => this.logout());
-        
+
         // Fechar modais
         document.querySelectorAll('.modal .close, .modal-cancel').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -180,7 +200,18 @@ class AgendaManager {
 
     async loadInitialData() {
         await this.loadInstances();
-        await this.loadContactGroups();
+        await this.loadContactGroupsForFilter();
+    }
+
+    async loadContactGroupsForFilter() {
+        try {
+            const data = await this.apiRequest('/api/contact-groups');
+            this.contactGroups = data.groups || [];
+            this.updateGroupFilters();
+        } catch (error) {
+            console.error('❌ Erro ao carregar grupos de contatos:', error);
+            this.contactGroups = [];
+        }
     }
 
     async loadInstances() {
@@ -211,20 +242,48 @@ class AgendaManager {
         try {
             // ✅ USANDO APIREQUEST
             const data = await this.apiRequest('/api/participants');
-            
+
+            // ✅ DEBUG - Verificar estrutura dos dados
+            console.log('🔍 DEBUG - Resposta da API:', {
+                success: data.success,
+                totalParticipants: data.participants ? data.participants.length : 0,
+                firstParticipant: data.participants ? data.participants[0] : null,
+                statistics: data.statistics
+            });
+
             if (data.success) {
-                this.contacts = data.participants || [];
+                // ✅ MAPEAR CORRETAMENTE OS CAMPOS DOS PARTICIPANTS COM INFORMAÇÕES DE GRUPOS
+                this.contacts = (data.participants || []).map(participant => {
+                    // Usar os campos exatos do controller
+                    return {
+                        id: participant.id || participant._id,
+                        name: participant.name || participant.pushName || 'Nome não disponível',
+                        phone: participant.phone || participant.phoneNumber || '',
+                        whatsappId: participant.whatsappId || participant.participantId || '',
+                        messageCount: participant.messageCount || 0,
+                        isActive: participant.isActive !== undefined ? participant.isActive : true,
+                        lastActivity: participant.lastActivity || participant.lastMessageTimestamp,
+                        source: participant.source || 'whatsapp',
+                        // ✅ NOVOS CAMPOS PARA GRUPOS
+                        groups: participant.groups || [],
+                        groupCount: participant.groupCount || 0,
+                        adminGroups: participant.adminGroups || 0,
+                        // Campos adicionais para compatibilidade
+                        remoteJid: participant.remoteJid,
+                        isBusiness: participant.isBusiness || false
+                    };
+                });
+
                 this.renderContacts();
                 this.updateContactsStats(data.statistics);
-                
+
                 this.auth.showNotification(`${this.contacts.length} contatos carregados com sucesso`, 'success');
             } else {
                 throw new Error(data.error || 'Erro ao carregar contatos');
             }
-            
+
         } catch (error) {
             console.error('❌ Erro ao carregar contatos:', error);
-            // O erro já foi tratado no apiRequest
         }
     }
 
@@ -234,44 +293,76 @@ class AgendaManager {
 
         if (this.contacts.length === 0) {
             container.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-address-book"></i>
-                    <h3>Nenhum contato encontrado</h3>
-                    <p>Nenhum contato foi carregado das suas instâncias</p>
-                    <button id="loadContactsInitialBtn" class="btn btn-primary">
-                        <i class="fas fa-download"></i>
-                        Carregar Contatos
-                    </button>
-                </div>
-            `;
-            
+        <div class="empty-state">
+            <i class="fas fa-address-book"></i>
+            <h3>Nenhum contato encontrado</h3>
+            <p>Nenhum contato foi carregado das suas instâncias</p>
+            <button id="loadContactsInitialBtn" class="btn btn-primary">
+                <i class="fas fa-download"></i>
+                Carregar Contatos
+            </button>
+        </div>
+    `;
+
             document.getElementById('loadContactsInitialBtn')?.addEventListener('click', () => this.loadContacts());
             return;
         }
 
-        container.innerHTML = this.contacts.map(contact => `
-            <div class="contact-card" data-contact-id="${contact.id}">
-                <div class="contact-avatar">
-                    <i class="fas fa-user"></i>
-                </div>
-                <div class="contact-info">
-                    <h4 class="contact-name">${this.escapeHtml(contact.name)}</h4>
-                    <p class="contact-phone">${this.formatPhone(contact.phone)}</p>
-                    <p class="contact-waid">${contact.whatsappId}</p>
-                    ${contact.messageCount > 1 ? `<span class="message-badge">${contact.messageCount} mensagens</span>` : ''}
-                    ${contact.isActive ? `<span class="active-badge">Ativo</span>` : '<span class="inactive-badge">Inativo</span>'}
-                    ${contact.lastActivity ? `<p class="contact-activity">Última atividade: ${this.formatDate(contact.lastActivity)}</p>` : ''}
-                </div>
-                <div class="contact-actions">
-                    <button class="btn-icon" onclick="agendaManager.sendMessage('${contact.phone}')" title="Enviar mensagem">
-                        <i class="fas fa-comment"></i>
-                    </button>
-                    <button class="btn-icon" onclick="agendaManager.viewContactDetails('${contact.id}')" title="Ver detalhes">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                </div>
+        container.innerHTML = this.contacts.map(contact => {
+            // ✅ VALIDAÇÃO ROBUSTA DE TODOS OS CAMPOS
+            const contactId = contact.id || 'unknown';
+            const contactName = this.escapeHtml(contact.name || 'Sem nome');
+            const contactPhone = this.formatPhone(contact.phone || '');
+            const whatsappId = contact.whatsappId || '';
+            const messageCount = contact.messageCount || 0;
+            const isActive = contact.isActive !== false;
+            const lastActivity = contact.lastActivity ? this.formatDate(contact.lastActivity) : null;
+            const source = contact.source || 'whatsapp';
+
+            // ✅ NOVAS INFORMAÇÕES DE GRUPOS
+            const groupCount = contact.groupCount || 0;
+            const adminGroups = contact.adminGroups || 0;
+            const groups = contact.groups || [];
+
+            // ✅ GERAR HTML DOS GRUPOS
+            const groupsHtml = this.generateGroupsHtml(groups, groupCount, adminGroups);
+
+            return `
+        <div class="contact-card" data-contact-id="${contactId}" data-source="${source}">
+            <div class="contact-avatar">
+                <i class="fas fa-user"></i>
             </div>
-        `).join('');
+            <div class="contact-info">
+                <h4 class="contact-name"> 👤 ${contactName}</h4>
+                <p class="contact-phone">📱 ${contactPhone}</p>
+                ${whatsappId ? `<p class="contact-waid">🔑 ${whatsappId}</p>` : ''}
+                
+                <!-- ✅ NOVA SEÇÃO DE GRUPOS -->
+                <div class="contact-groups-section">
+                    ${groupsHtml}
+                </div>
+                
+                ${messageCount > 0 ? `<span class="message-badge">✉️ ${messageCount} mensagens</span>` : ''}    
+                ${isActive ? `<span class="active-badge">Ativo</span>` : '<span class="inactive-badge">Inativo</span>'}
+                ${source === 'manual' ? `<span class="manual-badge">Manual</span>` : ''}
+                ${lastActivity ? `<p class="contact-activity">Última atividade: ${lastActivity}</p>` : ''}
+            </div>
+            <div class="contact-actions">
+                <button class="btn-icon" onclick="agendaManager.sendMessage('${contact.phone}')" title="Enviar mensagem">
+                    <i class="fas fa-comment"></i>
+                </button>
+                <button class="btn-icon" onclick="agendaManager.viewContactDetails('${contactId}')" title="Ver detalhes">
+                    <i class="fas fa-eye"></i>
+                </button>
+                ${groupCount > 0 ? `
+                <button class="btn-icon" onclick="agendaManager.viewContactGroups('${contactId}')" title="Ver grupos">
+                    <i class="fas fa-users"></i>
+                </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+        }).join('');
     }
 
     async loadContactGroups() {
@@ -285,12 +376,185 @@ class AgendaManager {
         }
     }
 
+    // Adicione este método à classe AgendaManager para debug
+    debugParticipants(data) {
+        console.log('🔍 DEBUG - Estrutura dos participants:', {
+            success: data.success,
+            total: data.participants ? data.participants.length : 0,
+            firstParticipant: data.participants ? data.participants[0] : null,
+            statistics: data.statistics
+        });
+
+        if (data.participants && data.participants.length > 0) {
+            console.log('📋 Campos disponíveis no primeiro participant:', Object.keys(data.participants[0]));
+        }
+    }
+
+    generateGroupsHtml(groups, groupCount, adminGroups) {
+        if (groupCount === 0) {
+            return `
+            <div class="groups-info">
+                <span class="groups-badge no-groups">
+                    <i class="fas fa-users"></i>
+                    Não participa de grupos
+                </span>
+            </div>
+        `;
+        }
+
+        let groupsHtml = '';
+
+        // Se houver grupos específicos, mostrar os primeiros 3
+        if (groups && groups.length > 0) {
+            const displayedGroups = groups.slice(0, 3);
+            const remainingGroups = groups.length - 3;
+
+            groupsHtml = `
+            <div class="groups-list">
+                ${displayedGroups.map(group => `
+                    <span class="group-tag ${group.role === 'admin' || group.role === 'superadmin' ? 'admin-group' : ''}" 
+                          title="${this.escapeHtml(group.name)} - ${group.role}">
+                        <i class="fas ${group.role === 'admin' || group.role === 'superadmin' ? 'fa-crown' : 'fa-user'}"></i>
+                        ${this.truncateText(group.name, 15)}
+                    </span>
+                `).join('')}
+                ${remainingGroups > 0 ? `
+                    <span class="group-tag more-groups" title="Mais ${remainingGroups} grupos">
+                        +${remainingGroups}
+                    </span>
+                ` : ''}
+            </div>
+        `;
+        }
+
+        return `
+        <div class="groups-info">
+            <div class="groups-summary">
+                <span class="groups-badge">
+                    <i class="fas fa-users"></i>
+                    ${groupCount} grupo${groupCount !== 1 ? 's' : ''}
+                </span>
+                ${adminGroups > 0 ? `
+                    <span class="admin-badge">
+                        <i class="fas fa-crown"></i>
+                        Admin em ${adminGroups}
+                    </span>
+                ` : ''}
+            </div>
+            ${groupsHtml}
+        </div>
+    `;
+    }
+    async viewContactGroups(contactId) {
+        try {
+            const contact = this.contacts.find(c => c.id === contactId);
+            if (!contact) {
+                this.auth.showNotification('Contato não encontrado', 'error');
+                return;
+            }
+
+            // Buscar informações detalhadas dos grupos
+            const data = await this.apiRequest(`/api/participants/${contactId}/groups`);
+
+            if (data.success) {
+                this.showContactGroupsModal(contact, data.groups);
+            } else {
+                throw new Error(data.error || 'Erro ao carregar grupos');
+            }
+
+        } catch (error) {
+            console.error('❌ Erro ao carregar grupos do contato:', error);
+            this.auth.showNotification('Erro ao carregar grupos', 'error');
+        }
+    }
+
+    showContactGroupsModal(contact, groups) {
+        const modalHtml = `
+        <div id="contactGroupsModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <div class="modal-header">
+                    <h3>Grupos de ${this.escapeHtml(contact.name)}</h3>
+                    <p>Participa de ${groups.length} grupos</p>
+                </div>
+                <div class="modal-body">
+                    <div class="groups-stats">
+                        <div class="stat-item">
+                            <span class="stat-number">${groups.length}</span>
+                            <span class="stat-label">Total de Grupos</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-number">${groups.filter(g => g.role === 'admin' || g.role === 'superadmin').length}</span>
+                            <span class="stat-label">Como Admin</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-number">${groups.filter(g => g.isActive).length}</span>
+                            <span class="stat-label">Grupos Ativos</span>
+                        </div>
+                    </div>
+                    
+                    <div class="groups-list-detailed">
+                        ${groups.length > 0 ? groups.map(group => `
+                            <div class="group-item ${group.role === 'admin' || group.role === 'superadmin' ? 'admin-role' : 'member-role'}">
+                                <div class="group-icon">
+                                    <i class="fas ${group.role === 'admin' || group.role === 'superadmin' ? 'fa-crown' : 'fa-user'}"></i>
+                                </div>
+                                <div class="group-details">
+                                    <h4>${this.escapeHtml(group.name)}</h4>
+                                    <p class="group-meta">
+                                        <span class="role-badge ${group.role}">${group.role === 'admin' || group.role === 'superadmin' ? 'Administrador' : 'Membro'}</span>
+                                        <span class="participant-count">${group.participantCount || 0} membros</span>
+                                        ${group.joinedAt ? `<span class="joined-date">Entrou em ${this.formatDate(group.joinedAt)}</span>` : ''}
+                                    </p>
+                                    ${group.description ? `<p class="group-description">${this.escapeHtml(group.description)}</p>` : ''}
+                                </div>
+                                <div class="group-actions">
+                                    <button class="btn btn-sm btn-outline" onclick="agendaManager.viewGroupDetails('${group.id}')">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('') : `
+                            <div class="empty-state">
+                                <i class="fas fa-users"></i>
+                                <p>Este contato não participa de nenhum grupo</p>
+                            </div>
+                        `}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+        // Remover modal existente
+        const existingModal = document.getElementById('contactGroupsModal');
+        if (existingModal) existingModal.remove();
+
+        // Adicionar novo modal
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = document.getElementById('contactGroupsModal');
+
+        // Configurar eventos
+        modal.querySelector('.close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
+
+        modal.style.display = 'block';
+    }
+
+    truncateText(text, maxLength) {
+        if (!text) return '';
+        if (text.length <= maxLength) return this.escapeHtml(text);
+        return this.escapeHtml(text.substring(0, maxLength)) + '...';
+    }
+
+
     updateGroupFilters() {
-        // Atualizar filtro de grupos nos contatos
         const groupFilter = document.getElementById('filterGroup');
-        if (groupFilter) {
+        if (groupFilter && this.contactGroups) {
             groupFilter.innerHTML = '<option value="">Todos os Grupos</option>';
-            this.groups.forEach(group => {
+            this.contactGroups.forEach(group => {
                 const option = document.createElement('option');
                 option.value = group._id;
                 option.textContent = group.name;
@@ -298,10 +562,9 @@ class AgendaManager {
             });
         }
 
-        // Atualizar select de grupos no modal de novo contato
         const groupsSelect = document.getElementById('newContactGroups');
-        if (groupsSelect) {
-            groupsSelect.innerHTML = this.groups.map(group => 
+        if (groupsSelect && this.contactGroups) {
+            groupsSelect.innerHTML = this.contactGroups.map(group =>
                 `<option value="${group._id}">${this.escapeHtml(group.name)}</option>`
             ).join('');
         }
@@ -310,32 +573,59 @@ class AgendaManager {
     filterContacts() {
         let filtered = [...this.contacts];
 
-        // Filtro de busca
         if (this.filters.search) {
             const searchTerm = this.filters.search.toLowerCase();
-            filtered = filtered.filter(contact => 
-                contact.name.toLowerCase().includes(searchTerm) ||
-                contact.phone.includes(searchTerm) ||
+            filtered = filtered.filter(contact =>
+                (contact.name || '').toLowerCase().includes(searchTerm) ||
+                (contact.phone || '').includes(searchTerm) ||
                 (contact.whatsappId && contact.whatsappId.toLowerCase().includes(searchTerm))
             );
         }
 
-        // Filtro de plataforma
         if (this.filters.platform) {
             filtered = filtered.filter(contact => contact.source === this.filters.platform);
         }
 
-        // Filtro de grupo (será implementado quando tiver grupos associados)
-        if (this.filters.group) {
-            // Implementar lógica de filtro por grupo quando disponível
+        if (this.filters.group && this.contactGroups) {
+            const selectedGroup = this.contactGroups.find(g => g._id === this.filters.group);
+            if (selectedGroup) {
+                filtered = filtered.filter(contact => {
+                    const groups = contact.groups || [];
+                    return groups.some(g => g.groupId === this.filters.group || g.id === this.filters.group || g.jid === selectedGroup.jid);
+                });
+            }
         }
 
         this.sortContacts(filtered);
     }
 
+    async debugCheckData() {
+        try {
+            console.log('🔍 Iniciando debug...');
+
+            // Teste 1: Rota básica
+            const testData = await this.apiRequest('/api/participants/debug/test');
+            console.log('✅ Rota básica:', testData);
+
+            // Teste 2: Rota de debug
+            const debugData = await this.apiRequest('/api/participants/debug/check-data');
+            console.log('✅ Dados de debug:', debugData);
+
+            if (debugData.success) {
+                this.auth.showNotification(
+                    `Debug: ${debugData.debug.userParticipantsCount} participants encontrados`,
+                    'info'
+                );
+            }
+        } catch (error) {
+            console.error('❌ Erro no debug:', error);
+            this.auth.showNotification('Erro no debug - verifique o console do servidor', 'error');
+        }
+    }
+
     sortContacts(contacts = null) {
         const contactsToSort = contacts || [...this.contacts];
-        
+
         switch (this.filters.sort) {
             case 'name':
                 contactsToSort.sort((a, b) => a.name.localeCompare(b.name));
@@ -351,50 +641,81 @@ class AgendaManager {
         this.renderSpecificContacts(contactsToSort);
     }
 
+
     renderSpecificContacts(contacts) {
         const container = document.getElementById('contactsList');
         if (!container) return;
 
         if (contacts.length === 0) {
             container.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-search"></i>
-                    <h3>Nenhum contato encontrado</h3>
-                    <p>Tente ajustar os filtros de busca</p>
-                </div>
-            `;
+        <div class="empty-state">
+            <i class="fas fa-search"></i>
+            <h3>Nenhum contato encontrado</h3>
+            <p>Tente ajustar os filtros de busca</p>
+        </div>
+    `;
             return;
         }
 
-        container.innerHTML = contacts.map(contact => `
-            <div class="contact-card" data-contact-id="${contact.id}">
-                <div class="contact-avatar">
-                    <i class="fas fa-user"></i>
-                </div>
-                <div class="contact-info">
-                    <h4 class="contact-name">${this.escapeHtml(contact.name)}</h4>
-                    <p class="contact-phone">${this.formatPhone(contact.phone)}</p>
-                    <p class="contact-waid">${contact.whatsappId}</p>
-                    ${contact.messageCount > 1 ? `<span class="message-badge">${contact.messageCount} mensagens</span>` : ''}
-                    ${contact.isActive ? `<span class="active-badge">Ativo</span>` : '<span class="inactive-badge">Inativo</span>'}
-                </div>
-                <div class="contact-actions">
-                    <button class="btn-icon" onclick="agendaManager.sendMessage('${contact.phone}')" title="Enviar mensagem">
-                        <i class="fas fa-comment"></i>
-                    </button>
-                    <button class="btn-icon" onclick="agendaManager.viewContactDetails('${contact.id}')" title="Ver detalhes">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                </div>
+        container.innerHTML = contacts.map(contact => {
+            const contactId = contact.id || 'unknown';
+            const contactName = this.escapeHtml(contact.name || 'Sem nome');
+            const contactPhone = this.formatPhone(contact.phone || '');
+            const whatsappId = contact.whatsappId || '';
+            const messageCount = contact.messageCount || 0;
+            const isActive = contact.isActive !== false;
+            const source = contact.source || 'whatsapp';
+
+            // ✅ NOVAS INFORMAÇÕES DE GRUPOS
+            const groupCount = contact.groupCount || 0;
+            const adminGroups = contact.adminGroups || 0;
+            const groups = contact.groups || [];
+
+            // ✅ GERAR HTML DOS GRUPOS
+            const groupsHtml = this.generateGroupsHtml(groups, groupCount, adminGroups);
+
+            return `
+        <div class="contact-card" data-contact-id="${contactId}" data-source="${source}">
+            <div class="contact-avatar">
+                <i class="fas fa-user"></i>
             </div>
-        `).join('');
+            <div class="contact-info">
+                <h4 class="contact-name">👤 ${contactName}</h4>
+                <p class="contact-phone">📱 ${contactPhone}</p>
+                ${whatsappId ? `<p class="contact-waid">🔑 ${whatsappId}</p>` : ''}
+                
+                <!-- ✅ NOVA SEÇÃO DE GRUPOS -->
+                <div class="contact-groups-section">
+                    ${groupsHtml}
+                </div>
+                
+                ${messageCount > 0 ? `<span class="message-badge">✉️ ${messageCount} mensagens</span>` : ''}
+                ${isActive ? `<span class="active-badge">Ativo</span>` : '<span class="inactive-badge">Inativo</span>'}
+                ${source === 'manual' ? `<span class="manual-badge">Manual</span>` : ''}
+            </div>
+            <div class="contact-actions">
+                <button class="btn-icon" onclick="agendaManager.sendMessage('${contact.phone}')" title="Enviar mensagem">
+                    <i class="fas fa-comment"></i>
+                </button>
+                <button class="btn-icon" onclick="agendaManager.viewContactDetails('${contactId}')" title="Ver detalhes">
+                    <i class="fas fa-eye"></i>
+                </button>
+                ${groupCount > 0 ? `
+                <button class="btn-icon" onclick="agendaManager.viewContactGroups('${contactId}')" title="Ver grupos">
+                    <i class="fas fa-users"></i>
+                </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+        }).join('');
     }
 
     async loadGroups() {
         try {
             // ✅ USANDO APIREQUEST PARA CADA INSTÂNCIA
             const allGroups = [];
-            
+
             for (const instance of this.instances) {
                 if (instance.status === 'connected') {
                     try {
@@ -410,9 +731,9 @@ class AgendaManager {
 
             this.groups = allGroups;
             this.renderGroups();
-            
+
             this.auth.showNotification(`${allGroups.length} grupos carregados com sucesso`, 'success');
-            
+
         } catch (error) {
             console.error('❌ Erro ao carregar grupos:', error);
         }
@@ -434,13 +755,13 @@ class AgendaManager {
                     </button>
                 </div>
             `;
-            
+
             document.getElementById('loadGroupsInitialBtn')?.addEventListener('click', () => this.loadGroups());
             return;
         }
 
         container.innerHTML = this.groups.map(group => `
-            <div class="group-card">
+            <div class="group-card" data-platform="${group.source || 'manual'}" data-instance-id="${group.whatsappInstanceId || ''}">
                 <div class="group-header">
                     <div class="group-avatar">
                         <i class="fas fa-users"></i>
@@ -452,6 +773,9 @@ class AgendaManager {
                             <span class="stat">
                                 <i class="fas fa-user-friends"></i>
                                 ${group.participantCount || group.contactCount || 0} membros
+                            </span>
+                            <span class="stat platform-badge">
+                                ${group.source === 'manual' ? 'Manual' : 'WhatsApp'}
                             </span>
                         </div>
                     </div>
@@ -475,14 +799,40 @@ class AgendaManager {
         const groupCards = container.querySelectorAll('.group-card');
         groupCards.forEach(card => {
             const groupName = card.querySelector('.group-name').textContent.toLowerCase();
-            const shouldShow = groupName.includes(searchTerm.toLowerCase());
+            const shouldShow = groupName.includes((searchTerm || '').toLowerCase());
             card.style.display = shouldShow ? 'block' : 'none';
         });
     }
 
+    filterGroupsByPlatform(platform) {
+        const container = document.getElementById('groupsList');
+        if (!container) return;
+        const groupCards = container.querySelectorAll('.group-card');
+        groupCards.forEach(card => {
+            const shouldShow = !platform || card.dataset.platform === platform;
+            card.style.display = shouldShow ? 'block' : 'none';
+        });
+    }
+
+    filterGroupsByInstance(instanceId) {
+        const container = document.getElementById('groupsList');
+        if (!container) return;
+        const groupCards = container.querySelectorAll('.group-card');
+        groupCards.forEach(card => {
+            const shouldShow = !instanceId || card.dataset.instanceId === instanceId;
+            card.style.display = shouldShow ? 'block' : 'none';
+        });
+    }
+
+    sortGroups(sortBy) {
+        const container = document.getElementById('groupsList');
+        if (!container) return;
+        console.log('Ordenar grupos por:', sortBy);
+    }
+
     showNewContactModal() {
         this.updateGroupFilters();
-        
+
         const modal = document.getElementById('newContactModal');
         if (modal) {
             modal.style.display = 'block';
@@ -492,7 +842,7 @@ class AgendaManager {
 
     async saveNewContact(event) {
         event.preventDefault();
-        
+
         try {
             const formData = {
                 name: document.getElementById('newContactName').value,
@@ -510,14 +860,14 @@ class AgendaManager {
             if (data.success) {
                 document.getElementById('newContactModal').style.display = 'none';
                 this.auth.showNotification('Contato salvo com sucesso', 'success');
+                // Recarregar a lista para incluir o novo contato
                 await this.loadContacts();
             } else {
                 throw new Error(data.error || 'Erro ao salvar contato');
             }
-            
+
         } catch (error) {
             console.error('❌ Erro ao salvar contato:', error);
-            // O erro já foi tratado no apiRequest
         }
     }
 
@@ -535,18 +885,130 @@ class AgendaManager {
 
     updateUserProfile() {
         const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-        
+
         document.getElementById('userName').textContent = userData.name || 'Usuário';
         document.getElementById('profileName').textContent = userData.name || 'Nome do Usuário';
         document.getElementById('profileEmail').textContent = userData.email || 'email@exemplo.com';
-        
+
         document.getElementById('userNameInput').value = userData.name || '';
         document.getElementById('userEmailInput').value = userData.email || '';
     }
 
     sendMessage(phone) {
-        console.log('Enviar mensagem para:', phone);
-        this.auth.showNotification(`Preparando para enviar mensagem para ${phone}`, 'info');
+        const digits = (phone || '').replace(/\D/g, '');
+        if (!digits) {
+            this.auth.showNotification('Telefone inválido', 'error');
+            return;
+        }
+        const instance = this.instances.find(i => i.status === 'connected');
+        if (!instance) {
+            this.auth.showNotification('Nenhuma instância WhatsApp conectada', 'warning');
+            return;
+        }
+        const jid = `${digits}@s.whatsapp.net`;
+        this.openChatModal({ phone: digits, jid, instanceId: instance._id, sessionName: instance.sessionName });
+    }
+
+    openChatModal({ phone, jid, instanceId, sessionName }) {
+        const existing = document.getElementById('chatModal');
+        if (existing) existing.remove();
+        const modalHtml = `
+            <div id=\"chatModal\" class=\"modal\">
+                <div class=\"modal-content chat-modal\">
+                    <span class=\"close\">&times;</span>
+                    <div class=\"chat-header\">
+                        <h3>Chat com ${this.formatPhone(phone)}</h3>
+                    </div>
+                    <div id=\"chatMessagesList\" class=\"chat-messages\"></div>
+                    <div class=\"chat-input\">
+                        <textarea id=\"chatInputText\" placeholder=\"Digite sua mensagem...\" rows=\"3\"></textarea>
+                        <button id=\"chatSendBtn\" class=\"btn btn-primary\"><i class=\"fas fa-paper-plane\"></i> Enviar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modal = document.getElementById('chatModal');
+        modal.style.display = 'block';
+        modal.querySelector('.close').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        document.getElementById('chatSendBtn').addEventListener('click', async () => {
+            const text = document.getElementById('chatInputText').value.trim();
+            if (!text) return;
+            await this.sendChatMessage({ text, jid, instanceId, sessionName });
+        });
+        this.renderChatMessages([]);
+        this.startChatPolling({ jid, instanceId, sessionName });
+    }
+
+    renderChatMessages(messages) {
+        const list = document.getElementById('chatMessagesList');
+        if (!list) return;
+
+        if (!messages || messages.length === 0) {
+            list.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-comments"></i>
+                <p>Nenhuma mensagem ainda</p>
+            </div>
+        `;
+            return;
+        }
+
+        list.innerHTML = messages.map(m => `
+        <div class="chat-message ${m.direction === 'outgoing' ? 'out' : 'in'}">
+            <div class="message-bubble">
+                ${this.escapeHtml(m.message || '')}
+                <div class="message-meta">
+                    ${new Date(m.timestamp || Date.now()).toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        })}
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+        list.scrollTop = list.scrollHeight;
+    }
+
+    appendMessageToChat(message) {
+        const list = document.getElementById('chatMessagesList');
+        if (!list) return;
+        const html = `
+            <div class=\"chat-message ${message.direction === 'outgoing' ? 'out' : 'in'}\">
+                <div class=\"bubble\">${this.escapeHtml(message.message || '')}</div>
+                <div class=\"meta\">${new Date(message.timestamp || Date.now()).toLocaleString('pt-BR')}</div>
+            </div>
+        `;
+        list.insertAdjacentHTML('beforeend', html);
+        list.scrollTop = list.scrollHeight;
+    }
+
+    async sendChatMessage({ text, jid, instanceId, sessionName }) {
+        try {
+            this.appendMessageToChat({ message: text, direction: 'outgoing', timestamp: Date.now() });
+            this.auth.showNotification('Enviando mensagem...', 'info');
+            const payload = { jid, message: text, instanceId, sessionName };
+            await this.apiRequest('/api/messages/send', { method: 'POST', body: JSON.stringify(payload) });
+            this.auth.showNotification('Mensagem enviada', 'success');
+            document.getElementById('chatInputText').value = '';
+        } catch (error) {
+            this.auth.showNotification(error.message || 'Erro ao enviar', 'error');
+        }
+    }
+
+    startChatPolling({ jid, instanceId, sessionName }) {
+        const poll = async () => {
+            try {
+                const params = new URLSearchParams({ jid, instanceId, sessionName, limit: '50' });
+                const data = await this.apiRequest(`/api/messages/history?${params.toString()}`);
+                if (data && data.success && Array.isArray(data.messages)) {
+                    this.renderChatMessages(data.messages);
+                }
+            } catch { }
+        };
+        poll();
     }
 
     viewContactDetails(contactId) {
@@ -603,3 +1065,5 @@ class AgendaManager {
 
 // Inicialização global
 window.AgendaManager = AgendaManager;
+
+
