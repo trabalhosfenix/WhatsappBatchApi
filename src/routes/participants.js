@@ -77,6 +77,8 @@ router.get('/debug/check-data', async (req, res) => {
 // participants.js - adicione temporariamente
 router.post('/debug/create-test', participantController.createTestParticipants);
 
+router.get('/filter/instance', participantController.getParticipantsByInstanceFilter);
+
 router.get('/debug/test', (req, res) => {
   try {
     res.json({

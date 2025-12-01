@@ -29,7 +29,7 @@ class ThemeManager {
     }
 
     init() {
-        this.applyTheme(this.currentTheme);
+        this.applyTheme('rosa-digital');
         this.setupThemeSelector();
         this.loadFonts();
     }

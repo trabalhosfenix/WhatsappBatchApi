@@ -13,7 +13,7 @@ const ContactGroup = require('../models/ContactGroup');
 const qrcode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
-const { handleMessage } = require("../controllers/messageController.js")
+// const { handleMessage } = require("../controllers/messageController.js")
 const Participant = require('../models/Participants.js'); // ajuste o caminho conforme sua estrutura
 
 // Logger silencioso como no bot que funciona
@@ -89,7 +89,8 @@ class WhatsAppService {
             }
 
             // Remover do banco
-            await WhatsAppInstance.findOneAndDelete({ sessionName });
+            // await WhatsAppInstance.findOneAndDelete({ sessionName });
+            await WhatsAppInstance.findOneAndUpdate({ sessionName }, { deleted: true });
 
             console.log(`✅ Instância ${sessionName} deletada com sucesso`);
             return true;
@@ -106,7 +107,8 @@ class WhatsAppService {
             // Verificar se já existe
             const existingInstance = await WhatsAppInstance.findOne({
                 sessionName,
-                userId
+                userId,
+                deleted: false,
             });
 
             if (existingInstance) {
@@ -190,7 +192,7 @@ class WhatsAppService {
                 keepAliveIntervalMs: 10000,
 
                 // ✅ CONFIGURAÇÕES DE COMPORTAMENTO
-                printQRInTerminal: true, // ✅ "true" correto
+                printQRInTerminal: false, // ✅ "true" correto
                 markOnlineOnConnect: false, // ✅ Mantenha false para evitar detecção
                 syncFullHistory: false,
                 fireInitQueries: true,
@@ -254,6 +256,7 @@ class WhatsAppService {
             this.initializingInstances.delete(sessionName);
         }
     }
+
     setupBaileysEvents(socket, sessionName, instanceId, userId, saveCreds) {
         let qrTimeout;
         let connectionTimeout;
@@ -278,7 +281,8 @@ class WhatsAppService {
                 await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                     status: 'connected',
                     phoneNumber: creds.me?.id?.replace(/:.*$/, '') || 'N/A',
-                    lastConnection: new Date()
+                    lastConnection: new Date(),
+                    isActive: true,
                 });
             }
         });
@@ -331,6 +335,11 @@ class WhatsAppService {
                         if (isLoggedOut) {
                             console.log(`🚫 [${sessionName}] Sessão deslogada, limpando...`);
                             await this.cleanupInstance(sessionName, instanceId, 'disconnected');
+                            await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                                status: 'disconnected',
+                                isActive: false,
+                                lastConnection: new Date()
+                            });
                         } else {
                             console.log(`🔄 [${sessionName}] Tentando reconectar...`);
                             await this.handleReconnection(sessionName, userId, instanceId);
@@ -493,7 +502,13 @@ class WhatsAppService {
         const userId = instanceMeta.userId;
 
         for (const msg of messages) {
-            console.log(`📩 [${sessionName}] Mensagem recebida:`, msg);
+            console.log(`📩 [${sessionName}] Mensagem recebida:`, JSON.stringify(msg));
+
+            if (msg.key.remoteJid === 'status@broadcast') {
+                console.log(`ℹ️ [${sessionName}] Mensagem de status ignorada`);
+                return;
+            }
+
             const participantInfo = this.extractParticipantInfo(msg);
 
             if (participantInfo) {
@@ -509,113 +524,110 @@ class WhatsAppService {
         }
     }
 
-
     // Função auxiliar para extrair informações do participante
     extractParticipantInfo(msg) {
-    try {
-        const remoteJid =  msg.key?.remoteJid;
-        const fromGroup = remoteJid?.includes('@g.us');
-        // if (fromGroup) extractGroupInfo( msg.key?.remoteJid)
+        try {
+            const remoteJid = msg.key?.remoteJid;
+            const fromGroup = remoteJid?.includes('@g.us') || remoteJid?.includes('newsletter');
+           
+            // if (fromGroup) extractGroupInfo( msg.key?.remoteJid)
 
-        let jid = remoteJid = fromGroup ? msg.key?.participant : remoteJid;
-        if (!jid) return null;
+            let jid = fromGroup ? msg.key?.participant : remoteJid;
+            if (!jid) return null;
 
-        let phone = '';
-        let participantType = 'whatsapp';
+            let phone = '';
+            let participantType = 'whatsapp';
 
-        // ✅ DETECTAR TIPO DE PARTICIPANTE
-        if (jid.includes('@lid')) {
-            // LinkedIn ID - usar participantAlt se disponível
-            participantType = 'linkedin';
-            if (msg.key?.participantAlt) {
-                phone = this.normalizePhoneNumber(
-                    msg.key.participantAlt.replace('@s.whatsapp.net', '')
-                );
+            // ✅ DETECTAR TIPO DE PARTICIPANTE
+            if (jid.includes('@lid')) {
+                // LinkedIn ID - usar participantAlt se disponível
+                participantType = 'linkedin';
+                if (msg.key?.participantAlt) {
+                    phone =  msg.key.participantAlt.replace('@s.whatsapp.net', '')
+                   
+                } else {
+                    phone = jid.replace('@lid', '');
+                }
             } else {
-                phone = jid.replace('@lid', '');
+                // WhatsApp normal
+                phone = jid.replace('@s.whatsapp.net', '').replace('@c.us', '')
+                
             }
-        } else {
-            // WhatsApp normal
-            phone = this.normalizePhoneNumber(
-                jid.replace('@s.whatsapp.net', '').replace('@c.us', '')
-            );
+
+            const pushName = msg.pushName || msg.notifyName || verifiedBizName;
+
+            return {
+                participantId: jid,
+                phoneNumber: phone,
+                pushName: pushName.trim(),
+                remoteJid: remoteJid,
+                participantType: participantType // ✅ novo campo para identificar tipo
+            };
+
+        } catch (error) {
+            console.error('Erro ao extrair informações do participante:', error);
+            return null;
         }
-
-        const pushName = msg.pushName || msg.notifyName || phone;
-
-        return {
-            participantId: jid,
-            phoneNumber: phone,
-            pushName: pushName.trim(),
-            remoteJid: remoteJid,
-            participantType: participantType // ✅ novo campo para identificar tipo
-        };
-
-    } catch (error) {
-        console.error('Erro ao extrair informações do participante:', error);
-        return null;
-    }
-}
-
-// ✅ NOVO MÉTODO: Normalizar número de telefone
-normalizePhoneNumber(phone) {
-    if (!phone) return '';
-
-    // Remover todos os caracteres não numéricos, exceto o +
-    let normalized = phone.replace(/[^\d+]/g, '');
-
-    // Se não tem código do país, adicionar padrão Brasil (55)
-    if (normalized.startsWith('+')) {
-        // Já tem código internacional, manter como está
-        return normalized;
-    } else if (normalized.startsWith('55') && normalized.length >= 12) {
-        // Já tem código do Brasil, adicionar +
-        return '+' + normalized;
-    } else if (normalized.length >= 10) {
-        // Número nacional, adicionar código do Brasil
-        // Remover possível 0 inicial do DDD
-        if (normalized.startsWith('0')) {
-            normalized = normalized.substring(1);
-        }
-        return '+55' + normalized;
     }
 
-    // Se for muito curto, retornar como está
-    return phone;
-}
+    // ✅ NOVO MÉTODO: Normalizar número de telefone
+    normalizePhoneNumber(phone) {
+        if (!phone) return '';
 
-extractGroupInfo(remoteJid) {
-    try {
-        if (!remoteJid || !remoteJid.includes('@g.us')) {
-            return null; // Não é um grupo
+        // Remover todos os caracteres não numéricos, exceto o +
+        let normalized = phone.replace(/[^\d+]/g, '');
+
+        // Se não tem código do país, adicionar padrão Brasil (55)
+        if (normalized.startsWith('+')) {
+            // Já tem código internacional, manter como está
+            return normalized;
+        } else if (normalized.startsWith('55') && normalized.length >= 12) {
+            // Já tem código do Brasil, adicionar +
+            return '+' + normalized;
+        } else if (normalized.length >= 10) {
+            // Número nacional, adicionar código do Brasil
+            // Remover possível 0 inicial do DDD
+            if (normalized.startsWith('0')) {
+                normalized = normalized.substring(1);
+            }
+            return '+55' + normalized;
         }
 
-        // Extrair partes do JID do grupo
-        const parts = remoteJid.split('@');
-        const groupId = parts[0]; // '5521997757028-1608758202'
-        const domain = parts[1]; // 'g.us'
-
-        // Extrair telefone do criador (se disponível no formato)
-        let creatorPhone = null;
-        if (groupId.includes('-')) {
-            const phoneParts = groupId.split('-');
-            creatorPhone = this.normalizePhoneNumber(phoneParts[0]); // '5521997757028'
-        }
-
-        return {
-            groupJid: remoteJid,
-            groupId: groupId,
-            domain: domain,
-            creatorPhone: creatorPhone,
-            isGroup: true
-        };
-
-    } catch (error) {
-        console.error('Erro ao extrair informações do grupo:', error);
-        return null;
+        // Se for muito curto, retornar como está
+        return phone;
     }
-}
 
+    extractGroupInfo(remoteJid) {
+        try {
+            if (!remoteJid || !remoteJid.includes('@g.us')) {
+                return null; // Não é um grupo
+            }
+
+            // Extrair partes do JID do grupo
+            const parts = remoteJid.split('@');
+            const groupId = parts[0]; // '5521997757028-1608758202'
+            const domain = parts[1]; // 'g.us'
+
+            // Extrair telefone do criador (se disponível no formato)
+            let creatorPhone = null;
+            if (groupId.includes('-')) {
+                const phoneParts = groupId.split('-');
+                creatorPhone = phoneParts[0] // '5521997757028'
+            }
+
+            return {
+                groupJid: remoteJid,
+                groupId: groupId,
+                domain: domain,
+                creatorPhone: creatorPhone,
+                isGroup: true
+            };
+
+        } catch (error) {
+            console.error('Erro ao extrair informações do grupo:', error);
+            return null;
+        }
+    }
 
     async handleReconnection(sessionName, userId, instanceId) {
         const attempts = this.reconnectionAttempts.get(sessionName) || 0;
@@ -704,9 +716,6 @@ extractGroupInfo(remoteJid) {
     }
 
     // 📁 services/whatsappService.js - ATUALIZAR O MÉTODO loadGroupsFromWhatsApp
-
-    // 📁 services/whatsappService.js - ATUALIZAR O MÉTODO loadGroupsFromWhatsApp
-
     async loadGroupsFromWhatsApp(sessionName, userId) {
         try {
             const socket = this.sockets.get(sessionName);
@@ -802,6 +811,7 @@ extractGroupInfo(remoteJid) {
                         console.log(`✅ [${sessionName}] Novo grupo criado: ${groupName}`);
                     }
 
+
                     groupCount++;
                     results.push({
                         jid: jid,
@@ -822,7 +832,8 @@ extractGroupInfo(remoteJid) {
                 total: groupCount,
                 created: createdCount,
                 updated: updatedCount,
-                results: results
+                results: results,
+                instanceId: instanceId,
             };
 
         } catch (error) {
@@ -838,60 +849,60 @@ extractGroupInfo(remoteJid) {
         return 'personal';
     }
 
-    async recreateInstance(sessionName, userId) {
-        try {
-            console.log(`🔄 [WhatsAppService] Recriando instância: ${sessionName}`);
+    // async recreateInstance(sessionName, userId) {
+    //     try {
+    //         console.log(`🔄 [WhatsAppService] Recriando instância: ${sessionName}`);
 
-            // Buscar instância no banco apenas pelo sessionName
-            // Ignoramos o userId se não for um ObjectId válido
-            let query = { sessionName };
+    //         // Buscar instância no banco apenas pelo sessionName
+    //         // Ignoramos o userId se não for um ObjectId válido
+    //         let query = { sessionName };
 
-            // Verificar se userId é um ObjectId válido (24 caracteres hexadecimais)
-            if (userId && typeof userId === 'string' && /^[0-9a-fA-F]{24}$/.test(userId)) {
-                query.userId = userId;
-            } else {
-                console.log(`⚠️ [${sessionName}] userId inválido ignorado: ${userId}`);
-            }
+    //         // Verificar se userId é um ObjectId válido (24 caracteres hexadecimais)
+    //         if (userId && typeof userId === 'string' && /^[0-9a-fA-F]{24}$/.test(userId)) {
+    //             query.userId = userId;
+    //         } else {
+    //             console.log(`⚠️ [${sessionName}] userId inválido ignorado: ${userId}`);
+    //         }
 
-            const instance = await WhatsAppInstance.findOne(query);
+    //         const instance = await WhatsAppInstance.findOne(query);
 
-            if (!instance) {
-                throw new Error('Instância não encontrada no banco');
-            }
+    //         if (!instance) {
+    //             throw new Error('Instância não encontrada no banco');
+    //         }
 
-            // Limpar socket existente se houver
-            const existingSocket = this.sockets.get(sessionName);
-            if (existingSocket) {
-                try {
-                    await existingSocket.end();
-                } catch (endError) {
-                    console.log(`⚠️ Erro ao finalizar socket existente:`, endError.message);
-                }
-                this.sockets.delete(sessionName);
-            }
+    //         // Limpar socket existente se houver
+    //         const existingSocket = this.sockets.get(sessionName);
+    //         if (existingSocket) {
+    //             try {
+    //                 await existingSocket.end();
+    //             } catch (endError) {
+    //                 console.log(`⚠️ Erro ao finalizar socket existente:`, endError.message);
+    //             }
+    //             this.sockets.delete(sessionName);
+    //         }
 
-            // Limpar outros registros
-            this.authStates.delete(sessionName);
-            this.reconnectionAttempts.delete(sessionName);
+    //         // Limpar outros registros
+    //         this.authStates.delete(sessionName);
+    //         this.reconnectionAttempts.delete(sessionName);
 
-            // Recriar a instância do zero
-            await this.initializeClient(sessionName, userId, instance._id);
+    //         // Recriar a instância do zero
+    //         await this.initializeClient(sessionName, userId, instance._id);
 
-            this.instanceInfo = this.instanceInfo || {};
-            this.instanceInfo[sessionName] = {
-                userId,
-                instanceId,
-                sessionName
-            };
+    //         this.instanceInfo = this.instanceInfo || {};
+    //         this.instanceInfo[sessionName] = {
+    //             userId,
+    //             instanceId,
+    //             sessionName
+    //         };
 
-            console.log(`✅ [WhatsAppService] Instância recriada: ${sessionName}`);
-            return true;
+    //         console.log(`✅ [WhatsAppService] Instância recriada: ${sessionName}`);
+    //         return true;
 
-        } catch (error) {
-            console.error(`❌ [WhatsAppService] Erro ao recriar instância:`, error);
-            throw error;
-        }
-    }
+    //     } catch (error) {
+    //         console.error(`❌ [WhatsAppService] Erro ao recriar instância:`, error);
+    //         throw error;
+    //     }
+    // }
 
     extractParticipantsAsContacts(participants) {
 
@@ -1042,8 +1053,6 @@ extractGroupInfo(remoteJid) {
             console.error(`❌ [${sessionName}] Erro ao enviar ao dono:`, err.message);
         }
     }
-
-
 
     async debugSocket(sessionName) {
         console.log(`🔍 [DEBUG] Analisando socket: ${sessionName}`);
@@ -1201,10 +1210,7 @@ extractGroupInfo(remoteJid) {
         };
     }
 
-
-
     // 📝 ATUALIZE o método loadContactsWithDetails no whatsappService.js
-
     async loadContactsWithDetails(sessionName, userId, instanceId) {
         try {
             const socket = this.sockets.get(sessionName);

@@ -4,6 +4,8 @@ const whatsappBaileysService = require('../services/whatsappService');
 const messageControlService = require('../services/messageControlService');
 const User = require('../models/User');
 // const limite = require('../models/Limite');
+const fs = require('fs');
+const path = require('path');
 
 
 
@@ -29,14 +31,27 @@ exports.createInstance = async (req, res) => {
     // Verificar se já existe instância com mesmo nome
     const existingInstance = await WhatsAppInstance.findOne({
       sessionName,
-      userId: req.user._id
+      userId: req.user._id,
     });
 
-    if (existingInstance) {
+    if (existingInstance && !existingInstance.deleted) {
       console.log(`❌ Instância já existe: ${sessionName}`);
       return res.status(400).json({
         success: false,
         error: 'Já existe uma instância com este nome'
+      });
+
+    } 
+
+    if (existingInstance && existingInstance.deleted) {
+      // Renomear instancia deletada
+      let newSessionName = sessionName + '-Deleted-' + Date.now();
+      // atualizar no banco para deletada e desconectada
+      await WhatsAppInstance.findOneAndUpdate({ sessionName }, { sessionName: newSessionName, status: 'disconnected', isActive: false, lastConnection: new Date() });
+      
+      return res.status(200).json({
+        success: true,
+        message: `Instância ${sessionName} renomeada para ${newSessionName} com sucesso`
       });
     }
 
@@ -106,7 +121,8 @@ exports.deleteInstance = async (req, res) => {
     // Verificar se a instância existe
     const instance = await WhatsAppInstance.findOne({
       sessionName,
-      userId: req.user._id
+      userId: req.user._id,
+      deleted: false
     });
 
     if (!instance) {
@@ -117,7 +133,21 @@ exports.deleteInstance = async (req, res) => {
     }
 
     // Deletar a instância usando o serviço
+    // await whatsappBaileysService.deleteInstance(sessionName);
+    // Marcar como deletada no banco
+    let instanceName = instance.sessionName + '-Deleted-' + Date.now();
+    await WhatsAppInstance.findOneAndUpdate({ sessionName }, { 
+      sessionName: instanceName, 
+      status: 'disconnected', 
+      deleted: true,
+      isActive: false, 
+      lastConnection: new Date() 
+    });
+    
+    // deletar tambem a pasta da instancia em auth_sessions
     await whatsappBaileysService.deleteInstance(sessionName);
+    // tambem deletar no disco
+    await fs.promises.rm(path.join(__dirname, '../auth_sessions', sessionName), { recursive: true, force: true });
 
     res.status(200).json({
       success: true,
@@ -142,7 +172,8 @@ exports.testQRGeneration = async (req, res) => {
         // Verificar instância
         const instance = await WhatsAppInstance.findOne({
             sessionName,
-            userId: req.user._id
+            userId: req.user._id,
+            deleted: false
         });
 
         if (!instance) {
@@ -193,7 +224,8 @@ exports.resetInstance = async (req, res) => {
 
         const instance = await WhatsAppInstance.findOne({
             sessionName,
-            userId: req.user._id
+            userId: req.user._id,
+            deleted: false
         });
 
         if (!instance) {
@@ -236,7 +268,7 @@ exports.getInstances = async (req, res) => {
   try {
     console.log('📋 GET /api/whatsapp/instances chamado');
 
-    const instances = await WhatsAppInstance.find({ userId: req.user._id })
+    const instances = await WhatsAppInstance.find({ userId: req.user._id, deleted: false })
       .sort({ createdAt: -1 });
 
     console.log(`📊 Encontradas ${instances.length} instâncias`);
@@ -370,7 +402,8 @@ exports.getInstance = async (req, res) => {
 
     const instance = await WhatsAppInstance.findOne({
       _id: req.params.id,
-      userId: req.user._id
+      userId: req.user._id,
+      deleted: false
     });
 
     if (!instance) {
@@ -410,7 +443,8 @@ exports.getQRCode = async (req, res) => {
 
     const instance = await WhatsAppInstance.findOne({
       _id: req.params.id,
-      userId: req.user._id
+      userId: req.user._id,
+      deleted: false,
     });
 
     if (!instance) {

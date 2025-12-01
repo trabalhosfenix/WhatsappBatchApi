@@ -44,6 +44,53 @@ class AgendaManager {
         return true;
     }
 
+    showNewGroupModal() {
+        // Remove modal anterior, se existir
+        const existingModal = document.getElementById('newGroupModal');
+        if (existingModal) existingModal.remove();
+
+        const modalHtml = `
+    <div id="newGroupModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Criar Novo Grupo</h3>
+
+            <form id="newGroupForm">
+                <label>Nome do Grupo:</label>
+                <input type="text" id="groupNameInput" required placeholder="Ex: Clientes VIP">
+
+                <label>Descrição (opcional):</label>
+                <textarea id="groupDescriptionInput" placeholder="Descrição do grupo"></textarea>
+
+                <label>Instância WhatsApp:</label>
+                <select id="groupInstanceSelect" required>
+                    <option value="">Selecione a instância</option>
+                    ${this.instances.map(i => `
+                        <option value="${i._id}">${i.sessionName}</option>
+                    `).join('')}
+                </select>
+
+                <button type="submit" class="btn btn-primary" style="margin-top: 15px;">
+                    <i class="fas fa-check"></i> Criar Grupo
+                </button>
+            </form>
+        </div>
+    </div>
+    `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        const modal = document.getElementById('newGroupModal');
+
+        modal.querySelector('.close').onclick = () => modal.remove();
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+        document.getElementById('newGroupForm').addEventListener('submit', (e) => this.saveNewGroup(e));
+
+        modal.style.display = 'block';
+    }
+
+
     // ✅ MÉTODO APIREQUEST INTEGRADO
     async apiRequest(endpoint, options = {}) {
         if (!this.isAuthenticated()) {
@@ -112,6 +159,49 @@ class AgendaManager {
         const token = localStorage.getItem('authToken');
         return !!token;
     }
+
+    async saveNewGroup(e) {
+        e.preventDefault();
+
+        const name = document.getElementById('groupNameInput').value.trim();
+        const description = document.getElementById('groupDescriptionInput').value.trim();
+        const instanceId = document.getElementById('groupInstanceSelect').value;
+
+        if (!name || !instanceId) {
+            this.auth.showNotification('Preencha o nome e a instância.', 'error');
+            return;
+        }
+
+        try {
+            const body = {
+                name,
+                description,
+                instanceId
+            };
+
+            const data = await this.apiRequest('/api/contact-groups', {
+                method: 'POST',
+                body: JSON.stringify(body)
+            });
+
+            if (data.success) {
+                this.auth.showNotification('Grupo criado com sucesso!', 'success');
+
+                // Fechar modal
+                document.getElementById('newGroupModal')?.remove();
+
+                // Recarregar lista de grupos
+                await this.loadContactGroups();
+            } else {
+                throw new Error(data.error || "Erro ao criar grupo");
+            }
+
+        } catch (error) {
+            console.error("❌ Erro ao criar grupo:", error);
+            this.auth.showNotification(error.message, 'error');
+        }
+    }
+
 
     setupEventListeners() {
         // Navegação entre seções

@@ -2336,3 +2336,83 @@ select option {
     gap: 10px;
     justify-content: flex-end;
 }
+
+/* Participants section specific styles */
+.participants-stats {
+    background: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    padding: 10px 20px;
+    font-size: 14px;
+}
+
+.participants-stats small {
+    color: #666;
+}
+
+.participants-stats span {
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.participant-details .badge {
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    margin-right: 5px;
+}
+
+.badge-success {
+    background-color: #28a745;
+    color: white;
+}
+
+.badge-info {
+    background-color: #17a2b8;
+    color: white;
+}
+
+.filters {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.filters .form-control {
+    flex: 1;
+    min-width: 200px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    border-top: 1px solid #eee;
+}
+
+.page-info {
+    font-size: 14px;
+    color: #666;
+}
+
+.btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 12px;
+}
+
+
+form#groupForm .form-actions {
+    margin-top:60px
+}

@@ -1,7 +1,7 @@
 // 📁 controllers/participantController.js
 // 📁 controllers/participantController.js - ATUALIZAR
 const Participant = require('../models/Participants.js');
-const WhatsAppInstance = require('../models/WhatsAppInstance.js'); 
+const WhatsAppInstance = require('../models/WhatsAppInstance.js');
 const ContactGroup = require('../models/ContactGroup.js'); // ✅ ADICIONAR IMPORT
 
 exports.getParticipants = async (req, res) => {
@@ -15,22 +15,40 @@ exports.getParticipants = async (req, res) => {
       platform = '',
       group = '',
       sort = 'name',
-      sessionName = ''
+      sessionName = '',
+      source = '', // ✅ NOVO: Filtro por source
+      page = 1,
+      limit = 50
     } = req.query;
+
+    // Converter para números
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
     // Construir query base
     let query = { user: userId };
 
     console.log('🔍 DEBUG - Query base:', query);
 
+    // ✅ NOVO: Filtro por source (manual/whatsapp)
+    if (source) {
+      if (source === 'manual') {
+        query.remoteJid = { $regex: '@manual', $options: 'i' };
+      } else if (source === 'whatsapp') {
+        query.remoteJid = { $not: { $regex: '@manual', $options: 'i' } };
+      }
+      console.log('🔍 DEBUG - Query com source filter:', query);
+    }
+
     // Filtro por sessão específica
-    if (sessionName) {
+    if (sessionName && sessionName.trim() !== '') {
       query.remoteJid = { $regex: sessionName, $options: 'i' };
       console.log('🔍 DEBUG - Query com sessionName:', query);
     }
 
     // Filtro de busca
-    if (search) {
+    if (search && search.trim() !== '') {
       query.$or = [
         { pushName: { $regex: search, $options: 'i' } },
         { phoneNumber: { $regex: search, $options: 'i' } },
@@ -56,42 +74,62 @@ exports.getParticipants = async (req, res) => {
     }
 
     console.log('🔍 DEBUG - Ordenação:', sortOptions);
+    console.log('🔍 DEBUG - Paginação:', { page: pageNum, limit: limitNum, skip });
 
-    // Executar query com debug
-    const participants = await Participant.find(query)
-      .sort(sortOptions)
-      .select('-__v')
-      .limit(1000);
+    // Executar query com paginação
+    const [participants, totalCount] = await Promise.all([
+      Participant.find(query)
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limitNum)
+        .select('-__v'),
+      Participant.countDocuments(query)
+    ]);
 
     console.log('🔍 DEBUG - Participants encontrados:', participants.length);
+    console.log('🔍 DEBUG - Total count:', totalCount);
 
-    // ✅ NOVO: Buscar informações de grupos para cada participante
-    const participantsWithGroups = await Promise.all(
+    // Calcular total de páginas
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    // Processar participantes
+    const participantsWithGroupsAndSource = await Promise.all(
       participants.map(async (participant) => {
         try {
-          // Buscar grupos onde este participante está presente
-          const groups = await ContactGroup.find({
-            userId: userId,
-            'contacts.whatsappId': participant.participantId,
-            source: 'whatsapp'
-          }).select('name jid groupMetadata.participants');
+          // Determinar se é manual ou whatsapp baseado no remoteJid
+          const isManual = participant.remoteJid.includes('@manual');
+          const source = isManual ? 'manual' : 'whatsapp';
+          
+          // Buscar grupos apenas para contatos do WhatsApp
+          let groups = [];
+          let groupCount = 0;
+          let adminGroups = 0;
+          
+          if (!isManual) {
+            const whatsappGroups = await ContactGroup.find({
+              userId: userId,
+              'contacts.whatsappId': participant.participantId,
+              source: 'whatsapp'
+            }).select('name jid groupMetadata.participants');
 
-          const groupDetails = groups.map(group => {
-            const groupParticipant = (group.groupMetadata?.participants || []).find(
-              p => p.id === participant.participantId
-            );
-            
-            return {
-              id: group._id,
-              jid: group.jid,
-              name: group.name,
-              role: groupParticipant?.type || 'member'
-            };
-          });
+            groups = whatsappGroups.map(group => {
+              const groupParticipant = (group.groupMetadata?.participants || []).find(
+                p => p.id === participant.participantId
+              );
+              
+              return {
+                id: group._id,
+                jid: group.jid,
+                name: group.name,
+                role: groupParticipant?.type || 'member'
+              };
+            });
 
-          const adminGroups = groupDetails.filter(g => 
-            g.role === 'admin' || g.role === 'superadmin'
-          ).length;
+            groupCount = groups.length;
+            adminGroups = groups.filter(g => 
+              g.role === 'admin' || g.role === 'superadmin'
+            ).length;
+          }
 
           return {
             id: participant._id,
@@ -103,15 +141,19 @@ exports.getParticipants = async (req, res) => {
             lastActivity: participant.lastMessageTimestamp,
             messageCount: participant.messageCount,
             isActive: participant.isActive,
-            source: 'whatsapp',
+            source: source,
             isBusiness: false,
-            // ✅ INFORMAÇÕES DE GRUPOS
-            groups: groupDetails,
-            groupCount: groupDetails.length,
+            groups: groups,
+            groupCount: groupCount,
             adminGroups: adminGroups
           };
         } catch (error) {
-          console.error(`❌ Erro ao buscar grupos para participante ${participant.participantId}:`, error);
+          console.error(`❌ Erro ao processar participante ${participant.participantId}:`, error);
+          
+          // Determinar source mesmo em caso de erro
+          const isManual = participant.remoteJid.includes('@manual');
+          const source = isManual ? 'manual' : 'whatsapp';
+          
           return {
             id: participant._id,
             participantId: participant.participantId,
@@ -122,9 +164,8 @@ exports.getParticipants = async (req, res) => {
             lastActivity: participant.lastMessageTimestamp,
             messageCount: participant.messageCount,
             isActive: participant.isActive,
-            source: 'whatsapp',
+            source: source,
             isBusiness: false,
-            // ✅ INFORMAÇÕES DE GRUPOS (vazias em caso de erro)
             groups: [],
             groupCount: 0,
             adminGroups: 0
@@ -133,13 +174,26 @@ exports.getParticipants = async (req, res) => {
       })
     );
 
-    // Estatísticas
-    const totalContacts = participantsWithGroups.length;
-    const activeContacts = participantsWithGroups.filter(p => p.isActive).length;
-    const recentContacts = participantsWithGroups.filter(p => {
-      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      return p.lastActivity > oneWeekAgo;
-    }).length;
+    // Estatísticas atualizadas
+    const totalContacts = totalCount;
+    const whatsappContacts = await Participant.countDocuments({ 
+      user: userId, 
+      remoteJid: { $not: { $regex: '@manual', $options: 'i' } } 
+    });
+    const manualContacts = await Participant.countDocuments({ 
+      user: userId, 
+      remoteJid: { $regex: '@manual', $options: 'i' } 
+    });
+    const activeContacts = await Participant.countDocuments({ 
+      user: userId, 
+      isActive: true 
+    });
+    const recentContacts = await Participant.countDocuments({ 
+      user: userId,
+      lastMessageTimestamp: { 
+        $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) 
+      }
+    });
 
     // Buscar instâncias conectadas
     const connectedInstances = await WhatsAppInstance.countDocuments({ 
@@ -149,6 +203,8 @@ exports.getParticipants = async (req, res) => {
 
     console.log('🔍 DEBUG - Estatísticas:', {
       totalContacts,
+      whatsappContacts,
+      manualContacts,
       activeContacts,
       recentContacts,
       connectedInstances
@@ -156,9 +212,19 @@ exports.getParticipants = async (req, res) => {
 
     res.json({
       success: true,
-      participants: participantsWithGroups, // ✅ Usar participantes com grupos
+      participants: participantsWithGroupsAndSource,
+      pagination: {
+        currentPage: pageNum,
+        totalPages: totalPages,
+        totalItems: totalCount,
+        itemsPerPage: limitNum,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1
+      },
       statistics: {
         totalContacts,
+        whatsappContacts,
+        manualContacts,
         activeContacts,
         recentContacts,
         connectedInstances
@@ -174,12 +240,22 @@ exports.getParticipants = async (req, res) => {
   }
 };
 
-exports.getParticipantsByInstance = async (req, res) => {
+// Adicione esta função no participantController.js
+exports.getParticipantsByInstanceFilter = async (req, res) => {
   try {
-    const { sessionName } = req.params;
     const userId = req.user._id;
+    const { instance: sessionName } = req.query;
 
-    // Verificar se a instância pertence ao usuário
+    console.log('🔍 DEBUG - Filtrando por instância:', sessionName);
+
+    if (!sessionName || sessionName.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Nome da instância é obrigatório'
+      });
+    }
+
+    // Verificar se a instância existe e pertence ao usuário
     const instance = await WhatsAppInstance.findOne({ 
       sessionName, 
       userId 
@@ -192,15 +268,153 @@ exports.getParticipantsByInstance = async (req, res) => {
       });
     }
 
-    const { 
+    // Buscar grupos desta instância
+    const groups = await ContactGroup.find({
+      userId: userId,
+      whatsappInstance: sessionName
+    }).select('jid');
+
+    const groupJids = groups.map(g => g.jid);
+
+    // Buscar participantes que estão nesses grupos
+    const participants = await Participant.find({
+      user: userId,
+      remoteJid: { $in: groupJids }
+    })
+    .sort({ pushName: 1 })
+    .select('-__v')
+    .limit(1000);
+
+    console.log('🔍 DEBUG - Participants encontrados para instância:', participants.length);
+
+    const participantsWithDetails = await Promise.all(
+      participants.map(async (participant) => {
+        try {
+          const isManual = participant.remoteJid.includes('@manual');
+          const source = isManual ? 'manual' : 'whatsapp';
+          
+          let groups = [];
+          let groupCount = 0;
+          let adminGroups = 0;
+          
+          if (!isManual) {
+            const whatsappGroups = await ContactGroup.find({
+              userId: userId,
+              'contacts.whatsappId': participant.participantId,
+              source: 'whatsapp',
+              whatsappInstance: sessionName
+            }).select('name jid groupMetadata.participants');
+
+            groups = whatsappGroups.map(group => {
+              const groupParticipant = (group.groupMetadata?.participants || []).find(
+                p => p.id === participant.participantId
+              );
+              
+              return {
+                id: group._id,
+                jid: group.jid,
+                name: group.name,
+                role: groupParticipant?.type || 'member'
+              };
+            });
+
+            groupCount = groups.length;
+            adminGroups = groups.filter(g => 
+              g.role === 'admin' || g.role === 'superadmin'
+            ).length;
+          }
+
+          return {
+            id: participant._id,
+            participantId: participant.participantId,
+            name: participant.pushName,
+            phone: participant.phoneNumber,
+            whatsappId: participant.participantId,
+            remoteJid: participant.remoteJid,
+            lastActivity: participant.lastMessageTimestamp,
+            messageCount: participant.messageCount,
+            isActive: participant.isActive,
+            source: source,
+            isBusiness: false,
+            groups: groups,
+            groupCount: groupCount,
+            adminGroups: adminGroups
+          };
+        } catch (error) {
+          console.error(`❌ Erro ao processar participante ${participant.participantId}:`, error);
+          
+          const isManual = participant.remoteJid.includes('@manual');
+          const source = isManual ? 'manual' : 'whatsapp';
+          
+          return {
+            id: participant._id,
+            participantId: participant.participantId,
+            name: participant.pushName,
+            phone: participant.phoneNumber,
+            whatsappId: participant.participantId,
+            remoteJid: participant.remoteJid,
+            lastActivity: participant.lastMessageTimestamp,
+            messageCount: participant.messageCount,
+            isActive: participant.isActive,
+            source: source,
+            isBusiness: false,
+            groups: [],
+            groupCount: 0,
+            adminGroups: 0
+          };
+        }
+      })
+    );
+
+    res.json({
+      success: true,
+      participants: participantsWithDetails,
+      total: participantsWithDetails.length,
+      sessionName,
+      statistics: {
+        total: participantsWithDetails.length,
+        whatsapp: participantsWithDetails.filter(p => p.source === 'whatsapp').length,
+        manual: participantsWithDetails.filter(p => p.source === 'manual').length
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao filtrar participants por instância:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+exports.getParticipantsByInstance = async (req, res) => {
+  try {
+    const { sessionName } = req.params;
+    const userId = req.user._id;
+
+    // Verificar se a instância pertence ao usuário
+    const instance = await WhatsAppInstance.findOne({
+      sessionName,
+      userId
+    });
+
+    if (!instance) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância não encontrada ou não pertence ao usuário'
+      });
+    }
+
+    const {
       search = '',
       sort = 'name'
     } = req.query;
 
-    // Filtro por remoteJid relacionado à sessão
-    let query = { 
+    // Filtro por remoteJid relacionado à sessão (apenas WhatsApp)
+    let query = {
       user: userId,
-      remoteJid: { $regex: sessionName, $options: 'i' }
+      remoteJid: { $regex: sessionName, $options: 'i' },
+      remoteJid: { $not: { $regex: '@manual' } } // Excluir manuais
     };
 
     // Filtro de busca
@@ -232,7 +446,6 @@ exports.getParticipantsByInstance = async (req, res) => {
       .select('-__v')
       .limit(500);
 
-    // ✅ NOVO: Buscar informações de grupos para cada participante
     const participantsWithGroups = await Promise.all(
       participants.map(async (participant) => {
         try {
@@ -246,7 +459,7 @@ exports.getParticipantsByInstance = async (req, res) => {
             const groupParticipant = (group.groupMetadata?.participants || []).find(
               p => p.id === participant.participantId
             );
-            
+
             return {
               id: group._id,
               jid: group.jid,
@@ -255,7 +468,7 @@ exports.getParticipantsByInstance = async (req, res) => {
             };
           });
 
-          const adminGroups = groupDetails.filter(g => 
+          const adminGroups = groupDetails.filter(g =>
             g.role === 'admin' || g.role === 'superadmin'
           ).length;
 
@@ -269,9 +482,9 @@ exports.getParticipantsByInstance = async (req, res) => {
             lastActivity: participant.lastMessageTimestamp,
             messageCount: participant.messageCount,
             isActive: participant.isActive,
+            // ✅ CORRIGIDO: Sempre whatsapp nesta rota
             source: 'whatsapp',
             isBusiness: false,
-            // ✅ INFORMAÇÕES DE GRUPOS
             groups: groupDetails,
             groupCount: groupDetails.length,
             adminGroups: adminGroups
@@ -300,7 +513,7 @@ exports.getParticipantsByInstance = async (req, res) => {
 
     res.json({
       success: true,
-      participants: participantsWithGroups, // ✅ Usar participantes com grupos
+      participants: participantsWithGroups,
       total: participantsWithGroups.length,
       sessionName
     });
@@ -314,12 +527,11 @@ exports.getParticipantsByInstance = async (req, res) => {
   }
 };
 
-
-
 exports.getParticipantStats = async (req, res) => {
   try {
     const userId = req.user._id;
 
+    // Estatísticas gerais
     const stats = await Participant.aggregate([
       {
         $match: { user: userId }
@@ -328,25 +540,50 @@ exports.getParticipantStats = async (req, res) => {
         $group: {
           _id: null,
           totalContacts: { $sum: 1 },
-          activeContacts: { 
-            $sum: { $cond: ['$isActive', 1, 0] } 
+          activeContacts: {
+            $sum: { $cond: ['$isActive', 1, 0] }
           },
           totalMessages: { $sum: '$messageCount' },
           recentActivity: {
-            $sum: { 
+            $sum: {
               $cond: [
-                { 
+                {
                   $gte: [
-                    '$lastMessageTimestamp', 
+                    '$lastMessageTimestamp',
                     new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-                  ] 
-                }, 
-                1, 
-                0 
-              ] 
+                  ]
+                },
+                1,
+                0
+              ]
             }
           },
           avgMessagesPerContact: { $avg: '$messageCount' }
+        }
+      }
+    ]);
+
+    // ✅ NOVO: Estatísticas por tipo (manual vs whatsapp)
+    const sourceStats = await Participant.aggregate([
+      {
+        $match: { user: userId }
+      },
+      {
+        $addFields: {
+          sourceType: {
+            $cond: [
+              { $regexMatch: { input: '$remoteJid', regex: '@manual' } },
+              'manual',
+              'whatsapp'
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$sourceType',
+          count: { $sum: 1 },
+          active: { $sum: { $cond: ['$isActive', 1, 0] } }
         }
       }
     ]);
@@ -360,16 +597,33 @@ exports.getParticipantStats = async (req, res) => {
     };
 
     // Buscar instâncias conectadas
-    const connectedInstances = await WhatsAppInstance.countDocuments({ 
-      userId, 
-      status: 'connected' 
+    const connectedInstances = await WhatsAppInstance.countDocuments({
+      userId,
+      status: 'connected'
+    });
+
+    // Formatar estatísticas por source
+    const sourceBreakdown = {
+      whatsapp: { total: 0, active: 0 },
+      manual: { total: 0, active: 0 }
+    };
+
+    sourceStats.forEach(stat => {
+      if (stat._id === 'whatsapp') {
+        sourceBreakdown.whatsapp.total = stat.count;
+        sourceBreakdown.whatsapp.active = stat.active;
+      } else if (stat._id === 'manual') {
+        sourceBreakdown.manual.total = stat.count;
+        sourceBreakdown.manual.active = stat.active;
+      }
     });
 
     res.json({
       success: true,
       stats: {
         ...result,
-        connectedInstances
+        connectedInstances,
+        sourceBreakdown // ✅ NOVO: Adicionar breakdown por tipo
       }
     });
 
@@ -395,7 +649,7 @@ exports.createManualParticipant = async (req, res) => {
 
     // Gerar participantId baseado no phone
     const participantId = whatsappId || `${phone.replace(/\D/g, '')}@s.whatsapp.net`;
-    
+
     // Gerar remoteJid para contatos manuais
     const remoteJid = `manual_${Date.now()}@manual`;
 
@@ -457,36 +711,46 @@ exports.searchParticipants = async (req, res) => {
         { participantId: { $regex: searchTerm, $options: 'i' } }
       ]
     })
-    .sort({ lastMessageTimestamp: -1 })
-    .limit(50)
-    .select('pushName phoneNumber participantId lastMessageTimestamp messageCount isActive');
+      .sort({ lastMessageTimestamp: -1 })
+      .limit(50)
+      .select('pushName phoneNumber participantId remoteJid lastMessageTimestamp messageCount isActive');
 
-    // ✅ NOVO: Buscar informações de grupos para cada participante
     const participantsWithGroups = await Promise.all(
       participants.map(async (participant) => {
         try {
-          const groups = await ContactGroup.find({
-            userId: userId,
-            'contacts.whatsappId': participant.participantId,
-            source: 'whatsapp'
-          }).select('name jid groupMetadata.participants');
+          // ✅ CORRIGIDO: Determinar source
+          const isManual = participant.remoteJid.includes('@manual');
+          const source = isManual ? 'manual' : 'whatsapp';
 
-          const groupDetails = groups.map(group => {
-            const groupParticipant = (group.groupMetadata?.participants || []).find(
-              p => p.id === participant.participantId
-            );
-            
-            return {
-              id: group._id,
-              jid: group.jid,
-              name: group.name,
-              role: groupParticipant?.type || 'member'
-            };
-          });
+          let groups = [];
+          let groupCount = 0;
+          let adminGroups = 0;
 
-          const adminGroups = groupDetails.filter(g => 
-            g.role === 'admin' || g.role === 'superadmin'
-          ).length;
+          if (!isManual) {
+            const whatsappGroups = await ContactGroup.find({
+              userId: userId,
+              'contacts.whatsappId': participant.participantId,
+              source: 'whatsapp'
+            }).select('name jid groupMetadata.participants');
+
+            groups = whatsappGroups.map(group => {
+              const groupParticipant = (group.groupMetadata?.participants || []).find(
+                p => p.id === participant.participantId
+              );
+
+              return {
+                id: group._id,
+                jid: group.jid,
+                name: group.name,
+                role: groupParticipant?.type || 'member'
+              };
+            });
+
+            groupCount = groups.length;
+            adminGroups = groups.filter(g =>
+              g.role === 'admin' || g.role === 'superadmin'
+            ).length;
+          }
 
           return {
             id: participant._id,
@@ -496,13 +760,18 @@ exports.searchParticipants = async (req, res) => {
             lastActivity: participant.lastMessageTimestamp,
             messageCount: participant.messageCount,
             isActive: participant.isActive,
-            // ✅ INFORMAÇÕES DE GRUPOS
-            groups: groupDetails,
-            groupCount: groupDetails.length,
+            // ✅ CORRIGIDO: Usar source correto
+            source: source,
+            groups: groups,
+            groupCount: groupCount,
             adminGroups: adminGroups
           };
         } catch (error) {
           console.error(`❌ Erro ao buscar grupos para participante ${participant.participantId}:`, error);
+
+          const isManual = participant.remoteJid.includes('@manual');
+          const source = isManual ? 'manual' : 'whatsapp';
+
           return {
             id: participant._id,
             name: participant.pushName,
@@ -511,6 +780,7 @@ exports.searchParticipants = async (req, res) => {
             lastActivity: participant.lastMessageTimestamp,
             messageCount: participant.messageCount,
             isActive: participant.isActive,
+            source: source,
             groups: [],
             groupCount: 0,
             adminGroups: 0
@@ -521,7 +791,7 @@ exports.searchParticipants = async (req, res) => {
 
     res.json({
       success: true,
-      participants: participantsWithGroups // ✅ Usar participantes com grupos
+      participants: participantsWithGroups
     });
 
   } catch (error) {
@@ -549,11 +819,11 @@ exports.getParticipantGroups = async (req, res) => {
     console.log(`📊 Encontrados ${groups.length} grupos para o participante`);
 
     const formattedGroups = groups.map(group => {
-      const participantInGroup = (group.contacts || []).find(contact => 
+      const participantInGroup = (group.contacts || []).find(contact =>
         contact.whatsappId === participantId
       );
-      
-      const groupParticipant = (group.groupMetadata?.participants || []).find(p => 
+
+      const groupParticipant = (group.groupMetadata?.participants || []).find(p =>
         p.id === participantId
       );
 
@@ -628,7 +898,7 @@ exports.syncParticipantGroups = async (req, res) => {
 exports.createTestParticipants = async (req, res) => {
   try {
     const userId = req.user._id;
-    
+
     const testParticipants = [
       {
         participantId: '5511999999999@s.whatsapp.net',
@@ -645,20 +915,20 @@ exports.createTestParticipants = async (req, res) => {
         user: userId
       }
     ];
-    
+
     const created = [];
     for (const participantData of testParticipants) {
       const participant = new Participant(participantData);
       await participant.save();
       created.push(participant);
     }
-    
+
     res.json({
       success: true,
       message: `${created.length} participants de teste criados`,
       participants: created
     });
-    
+
   } catch (error) {
     console.error('❌ Erro ao criar participants de teste:', error);
     res.status(500).json({
