@@ -410,7 +410,7 @@ const processMediaBatch = async (batchId) => {
 
     const whatsappInstance = batch.whatsappInstanceId;
     const instanceId = whatsappInstance._id;
-    const InstancePhoneNumber =whatsappInstance.phoneNumber
+    const InstancePhoneNumber = whatsappInstance.phoneNumber
 
     // ✅ Verificar limite diário antes de iniciar
     const limitStatus = await rateLimitService.getLimitStatus(batch.userId, instanceId);
@@ -458,83 +458,84 @@ const processMediaBatch = async (batchId) => {
     let dailyLimitExceeded = false;
 
     // ✅ Loop principal de envio
+    // ✅ LOOP PRINCIPAL DE ENVIO (AJUSTADO NO CONTROLLER)
     for (const contact of allContacts) {
       if (dailyLimitExceeded) break;
 
-      for (const mediaItem of batch.mediaItems) {
-        try {
-          // ✅ Verificar limites antes de cada envio
-          const delayResult = await smartDelay(batch.userId, instanceId, batch.options);
+      try {
+        // ✅ Verificar limites antes de cada envio
+        const delayResult = await smartDelay(batch.userId, instanceId, batch.options);
 
-          if (delayResult.hadDelay) {
-            console.log(`⏳ Aguardando ${delayResult.delay}ms antes do próximo envio...`);
-          }
-
-          const jid = contact.whatsappId && contact.whatsappId.includes('@')
-            ? contact.whatsappId
-            : `${contact.phone.replace(/\D/g, '')}@s.whatsapp.net`;
-
-          console.log(`📤 Enviando ${mediaItem.originalName} para: ${contact.name}`);
-
-          // ✅ Envio via mediaService
-          const sendResult = await mediaService.sendMediaToContact(
-            whatsappInstance.sessionName,
-            InstancePhoneNumber,
-            jid,
-            mediaItem,
-            caption,
-            batch.options
-          );
-
-          sentCount++;
-          results.push({
-            contact: contact.name,
-            phone: contact.phone,
-            mediaItem: mediaItem.originalName,
-            status: 'sent',
-            messageId: sendResult?.messageId,
-            timestamp: new Date()
-          });
-
-          // ✅ Atualizar progresso do lote
-          await MediaBatch.findByIdAndUpdate(batchId, {
-            'progress.sent': sentCount,
-            'progress.failed': failedCount
-          });
-
-          // ✅ Decrementar limite diário persistente
-          const remaining = await rateLimitService.decrementDailyLimit(instanceId);
-          if (remaining <= 0) {
-            console.log('🚨 LIMITE DIÁRIO ATINGIDO - PARANDO LOTE');
-            dailyLimitExceeded = true;
-            break;
-          }
-
-          console.log(`✅ ${sentCount}/${batch.progress.total} - ${contact.name} (Restam ${remaining})`);
-
-        } catch (error) {
-          console.error(`❌ Erro para ${contact.name}:`, error.message);
-
-          if (error.message.includes('LIMITE_DIARIO_EXCEDIDO')) {
-            console.log('🚨 LIMITE DIÁRIO ATINGIDO - PARANDO LOTE');
-            dailyLimitExceeded = true;
-            break;
-          }
-
-          failedCount++;
-          results.push({
-            contact: contact.name,
-            phone: contact.phone,
-            mediaItem: mediaItem.originalName,
-            status: 'failed',
-            error: error.message,
-            timestamp: new Date()
-          });
-
-          await MediaBatch.findByIdAndUpdate(batchId, {
-            'progress.failed': failedCount
-          });
+        if (delayResult.hadDelay) {
+          console.log(`⏳ Aguardando ${delayResult.delay}ms antes do próximo envio...`);
         }
+
+        const jid = contact.whatsappId && contact.whatsappId.includes('@')
+          ? contact.whatsappId
+          : `${contact.phone.replace(/\D/g, '')}@s.whatsapp.net`;
+
+        console.log(`📤 Enviando ${batch.mediaItems.length} mídia(s) para: ${contact.name}`);
+
+        // ✅ ENVIAR TODAS AS MÍDIAS DE UMA VEZ (array)
+        const sendResult = await mediaService.sendMediaToContact(
+          whatsappInstance.sessionName,
+          InstancePhoneNumber,
+          jid,
+          batch.mediaItems, // ENVIANDO ARRAY DE MÍDIAS
+          caption,
+          batch.options
+        );
+
+        // ✅ Contar como UM envio (mesmo com múltiplas mídias)
+        sentCount++;
+
+        results.push({
+          contact: contact.name,
+          phone: contact.phone,
+          mediaCount: batch.mediaItems.length,
+          status: 'sent',
+          messageIds: sendResult?.messageIds || [],
+          timestamp: new Date()
+        });
+
+        // ✅ Atualizar progresso do lote
+        await MediaBatch.findByIdAndUpdate(batchId, {
+          'progress.sent': sentCount,
+          'progress.failed': failedCount
+        });
+
+        // ✅ Decrementar APENAS UMA VEZ (mesmo com múltiplas mídias)
+        const remaining = await rateLimitService.decrementDailyLimit(instanceId);
+        if (remaining <= 0) {
+          console.log('🚨 LIMITE DIÁRIO ATINGIDO - PARANDO LOTE');
+          dailyLimitExceeded = true;
+          break;
+        }
+
+        console.log(`✅ ${sentCount}/${allContacts.length} - ${contact.name} (${batch.mediaItems.length} mídias, Restam ${remaining})`);
+
+      } catch (error) {
+        console.error(`❌ Erro para ${contact.name}:`, error.message);
+
+        if (error.message.includes('LIMITE_DIARIO_EXCEDIDO')) {
+          console.log('🚨 LIMITE DIÁRIO ATINGIDO - PARANDO LOTE');
+          dailyLimitExceeded = true;
+          break;
+        }
+
+        failedCount++;
+        results.push({
+          contact: contact.name,
+          phone: contact.phone,
+          mediaCount: batch.mediaItems.length,
+          status: 'failed',
+          error: error.message,
+          timestamp: new Date()
+        });
+
+        await MediaBatch.findByIdAndUpdate(batchId, {
+          'progress.failed': failedCount
+        });
       }
     }
 
@@ -607,7 +608,7 @@ const createMediaBatch = async (req, res) => {
     }
 
     const totalContacts = contactGroups.reduce((total, group) => total + group.contactCount, 0);
-    const totalSends = totalContacts * mediaItems.length;
+    const totalSends = totalContacts; // AGORA É 1 ENVIO POR CONTATO (mesmo com múltiplas mídias)
 
     if (totalContacts === 0) {
       return res.status(400).json({

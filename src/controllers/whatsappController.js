@@ -41,14 +41,14 @@ exports.createInstance = async (req, res) => {
         error: 'Já existe uma instância com este nome'
       });
 
-    } 
+    }
 
     if (existingInstance && existingInstance.deleted) {
       // Renomear instancia deletada
       let newSessionName = sessionName + '-Deleted-' + Date.now();
       // atualizar no banco para deletada e desconectada
       await WhatsAppInstance.findOneAndUpdate({ sessionName }, { sessionName: newSessionName, status: 'disconnected', isActive: false, lastConnection: new Date() });
-      
+
       return res.status(200).json({
         success: true,
         message: `Instância ${sessionName} renomeada para ${newSessionName} com sucesso`
@@ -57,7 +57,7 @@ exports.createInstance = async (req, res) => {
 
     // Criar instância
     const instance = await whatsappBaileysService.createClient(sessionName, req.user._id);
-    
+
     console.log(`✅ Instância criada no serviço:`, {
       id: instance._id,
       sessionName: instance.sessionName,
@@ -67,7 +67,7 @@ exports.createInstance = async (req, res) => {
 
     // Buscar instância atualizada do banco
     const updatedInstance = await WhatsAppInstance.findById(instance._id);
-    
+
     if (!updatedInstance) {
       throw new Error('Instância não encontrada após criação');
     }
@@ -136,14 +136,14 @@ exports.deleteInstance = async (req, res) => {
     // await whatsappBaileysService.deleteInstance(sessionName);
     // Marcar como deletada no banco
     let instanceName = instance.sessionName + '-Deleted-' + Date.now();
-    await WhatsAppInstance.findOneAndUpdate({ sessionName }, { 
-      sessionName: instanceName, 
-      status: 'disconnected', 
+    await WhatsAppInstance.findOneAndUpdate({ sessionName }, {
+      sessionName: instanceName,
+      status: 'disconnected',
       deleted: true,
-      isActive: false, 
-      lastConnection: new Date() 
+      isActive: false,
+      lastConnection: new Date()
     });
-    
+
     // deletar tambem a pasta da instancia em auth_sessions
     await whatsappBaileysService.deleteInstance(sessionName);
     // tambem deletar no disco
@@ -164,103 +164,103 @@ exports.deleteInstance = async (req, res) => {
 };
 
 exports.testQRGeneration = async (req, res) => {
-    try {
-        const { sessionName } = req.body;
-        
-        console.log(`🧪 TESTE DE QR CODE: ${sessionName}`);
-        
-        // Verificar instância
-        const instance = await WhatsAppInstance.findOne({
-            sessionName,
-            userId: req.user._id,
-            deleted: false
-        });
+  try {
+    const { sessionName } = req.body;
 
-        if (!instance) {
-            return res.status(404).json({
-                success: false,
-                error: 'Instância não encontrada'
-            });
-        }
+    console.log(`🧪 TESTE DE QR CODE: ${sessionName}`);
 
-        // Forçar nova inicialização
-        await whatsappBaileysService.deleteInstance(sessionName);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+    // Verificar instância
+    const instance = await WhatsAppInstance.findOne({
+      sessionName,
+      userId: req.user._id,
+      deleted: false
+    });
 
-        // Recriar
-        const newInstance = await whatsappBaileysService.createClient(sessionName, req.user._id);
-        
-        // Aguardar QR Code
-        await new Promise(resolve => setTimeout(resolve, 5000));
-
-        // Verificar resultado
-        const updatedInstance = await WhatsAppInstance.findById(newInstance._id);
-
-        res.json({
-            success: true,
-            testResult: {
-                sessionName,
-                status: updatedInstance.status,
-                hasQRCode: !!updatedInstance.qrCode,
-                qrCodeLength: updatedInstance.qrCode ? updatedInstance.qrCode.length : 0,
-                timestamp: new Date()
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Erro no teste de QR Code:', error);
-        res.status(400).json({
-            success: false,
-            error: error.message
-        });
+    if (!instance) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância não encontrada'
+      });
     }
+
+    // Forçar nova inicialização
+    await whatsappBaileysService.deleteInstance(sessionName);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Recriar
+    const newInstance = await whatsappBaileysService.createClient(sessionName, req.user._id);
+
+    // Aguardar QR Code
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Verificar resultado
+    const updatedInstance = await WhatsAppInstance.findById(newInstance._id);
+
+    res.json({
+      success: true,
+      testResult: {
+        sessionName,
+        status: updatedInstance.status,
+        hasQRCode: !!updatedInstance.qrCode,
+        qrCodeLength: updatedInstance.qrCode ? updatedInstance.qrCode.length : 0,
+        timestamp: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro no teste de QR Code:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
 };
 // Adicione ao controller
 exports.resetInstance = async (req, res) => {
-    try {
-        const { sessionName } = req.params;
-        
-        console.log(`🔄 RESET completo da instância: ${sessionName}`);
+  try {
+    const { sessionName } = req.params;
 
-        const instance = await WhatsAppInstance.findOne({
-            sessionName,
-            userId: req.user._id,
-            deleted: false
-        });
+    console.log(`🔄 RESET completo da instância: ${sessionName}`);
 
-        if (!instance) {
-            return res.status(404).json({
-                success: false,
-                error: 'Instância não encontrada'
-            });
-        }
+    const instance = await WhatsAppInstance.findOne({
+      sessionName,
+      userId: req.user._id,
+      deleted: false
+    });
 
-        // 1. Deletar completamente
-        await whatsappBaileysService.deleteInstance(sessionName);
-        
-        // 2. Aguardar limpeza
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        
-        // 3. Recriar do zero
-        const newInstance = await whatsappBaileysService.createClient(sessionName, req.user._id);
-
-        res.json({
-            success: true,
-            message: 'Instância resetada com sucesso',
-            instance: {
-                _id: newInstance._id,
-                sessionName: newInstance.sessionName,
-                status: newInstance.status
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Erro no reset:', error);
-        res.status(400).json({
-            success: false,
-            error: error.message
-        });
+    if (!instance) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância não encontrada'
+      });
     }
+
+    // 1. Deletar completamente
+    await whatsappBaileysService.deleteInstance(sessionName);
+
+    // 2. Aguardar limpeza
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // 3. Recriar do zero
+    const newInstance = await whatsappBaileysService.createClient(sessionName, req.user._id);
+
+    res.json({
+      success: true,
+      message: 'Instância resetada com sucesso',
+      instance: {
+        _id: newInstance._id,
+        sessionName: newInstance.sessionName,
+        status: newInstance.status
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro no reset:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
 };
 
 
@@ -276,7 +276,7 @@ exports.getInstances = async (req, res) => {
     // ✅ CORREÇÃO: Buscar todos os usuários de uma vez
     const userIds = [...new Set(instances.map(instance => instance.userId))];
     const users = await User.find({ _id: { $in: userIds } }).select('name email');
-    
+
     const userMap = users.reduce((map, user) => {
       map[user._id.toString()] = user;
       return map;
@@ -286,7 +286,7 @@ exports.getInstances = async (req, res) => {
     const instancesWithDetails = await Promise.all(
       instances.map(async (instance) => {
         const user = userMap[instance.userId.toString()];
-        
+
         // Buscar estatísticas de grupos
         const groupStats = await ContactGroup.aggregate([
           {
@@ -583,7 +583,7 @@ exports.getGroups = async (req, res) => {
       success: true,
       groups: groups.map(group => ({
         _id: group._id,
-        name: group.name,        
+        name: group.name,
         description: group.description,
         contactCount: group.contactCount,
         participantCount: group.participantCount,
@@ -670,3 +670,19 @@ exports.disconnectInstance = async (req, res) => {
     });
   }
 };
+
+exports.trackMessages = async (req, res) => {
+  try {
+    const { sessionName } = req.params;
+    await messageControlService.enableMessageTracking(sessionName);
+    res.json({
+      success: true,
+      message: `Rastreamento de mensagens habilitado para a instância ${sessionName}`
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+}

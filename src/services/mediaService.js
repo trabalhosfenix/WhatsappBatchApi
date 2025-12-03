@@ -55,10 +55,14 @@ class MediaService {
     }
 
     // ✅ NOVO: ENVIO DE MÍDIA DESVINCULADO DO WHATSAPP SERVICE
+    // ✅ ENVIO DE MÍDIA DESVINCULADO DO WHATSAPP SERVICE (AJUSTADO PARA MULTIPLAS MIDIAS)
     async sendMediaToContact(sessionName, InstancePhoneNumber, jid, mediaItem, caption = '', options = {}) {
         try {
-
             console.log(`📤 [${sessionName}] Enviando mídia para: ${jid}`);
+
+            // ✅ DETECTAR SE É MULTIPLAS MÍDIAS
+            const isMultipleMedia = Array.isArray(mediaItem);
+            const mediaItems = isMultipleMedia ? mediaItem : [mediaItem];
 
             // Garantir legenda final
             const finalCaption = options.caption || caption || '';
@@ -67,7 +71,9 @@ class MediaService {
 
             // Verificar conexão
             const connectionState = whatsappService.connectionStates.get(sessionName);
-            if (connectionState !== 'connected') { throw new Error(`Instância não está conectada. Estado: ${connectionState}`); }
+            if (connectionState !== 'connected') {
+                throw new Error(`Instância não está conectada. Estado: ${connectionState}`);
+            }
 
             // ✅ VERIFICAR CONEXÃO DA INSTÂNCIA
             const socket = whatsappService.sockets.get(sessionName);
@@ -82,50 +88,61 @@ class MediaService {
                 formattedJid = `${phone}@s.whatsapp.net`;
             }
 
+            // ✅ ESTRATÉGIA 1: ENVIAR MULTIPLAS MÍDIAS COM CAPTION ÚNICO
+            if (mediaItems.length > 1) {
+                return await this.sendMultipleMediaWithSingleCaption(
+                    socket, formattedJid, mediaItems, finalCaption,
+                    sessionName, InstancePhoneNumber, options
+                );
+            }
+
+            // ✅ ESTRATÉGIA 2: ENVIO DE MÍDIA ÚNICA (COMPATIBILIDADE)
+            const currentMedia = mediaItems[0];
+
             // Validar mídia
-            if (!mediaItem?.url || !mediaItem?.mimeType) {
+            if (!currentMedia?.url || !currentMedia?.mimeType) {
                 throw new Error('Objeto de mídia inválido. MimeType ou URL ausente.');
             }
 
-            const mediaUrl = `http://localhost:3000${mediaItem.url}`;
-            console.log(`🖼️ Tipo detectado: ${mediaItem.mimeType}`);
+            const mediaUrl = `http://localhost:3000${currentMedia.url}`;
+            console.log(`🖼️ Tipo detectado: ${currentMedia.mimeType}`);
 
             let messageOptions = {};
 
             // Escolher tipo de mídia
             if (!options.sendAsDocument) {
-                if (mediaItem.mimeType.startsWith('image/')) {
+                if (currentMedia.mimeType.startsWith('image/')) {
                     messageOptions = {
                         image: { url: mediaUrl },
-                        // caption: finalCaption,
-                        mimetype: mediaItem.mimeType
+                        caption: finalCaption || undefined,
+                        mimetype: currentMedia.mimeType
                     };
-                } else if (mediaItem.mimeType.startsWith('video/')) {
+                } else if (currentMedia.mimeType.startsWith('video/')) {
                     messageOptions = {
                         video: { url: mediaUrl },
-                        // caption: finalCaption,
-                        mimetype: mediaItem.mimeType
+                        caption: finalCaption || undefined,
+                        mimetype: currentMedia.mimeType
                     };
-                } else if (mediaItem.mimeType.startsWith('audio/')) {
+                } else if (currentMedia.mimeType.startsWith('audio/')) {
                     messageOptions = {
                         audio: { url: mediaUrl },
                         ptt: false,
-                        mimetype: mediaItem.mimeType
+                        mimetype: currentMedia.mimeType
                     };
                 } else {
                     messageOptions = {
                         document: { url: mediaUrl },
-                        // caption: finalCaption,
-                        mimetype: mediaItem.mimeType,
-                        fileName: mediaItem.originalName
+                        caption: finalCaption || undefined,
+                        mimetype: currentMedia.mimeType,
+                        fileName: currentMedia.originalName
                     };
                 }
             } else {
                 messageOptions = {
                     document: { url: mediaUrl },
-                    // caption: finalCaption,
-                    mimetype: mediaItem.mimeType,
-                    fileName: mediaItem.originalName
+                    caption: finalCaption || undefined,
+                    mimetype: currentMedia.mimeType,
+                    fileName: currentMedia.originalName
                 };
             }
 
@@ -141,7 +158,7 @@ class MediaService {
             });
 
             //
-            // 🔥 ENVIAR MENSAGEM DE SINCRONIZAÇÃO (para aparecer no WhatsApp do remetente)
+            // 🔥 ENVIAR MENSAGEM DE SINCRONIZAÇÃO
             //
             await socket.sendMessage(socket.user.id, {
                 deviceSync: {
@@ -151,21 +168,15 @@ class MediaService {
                 console.warn("⚠️ Falha ao sincronizar histórico (não crítico):", err.message);
             });
 
-
-
-            await socket.sendMessage(formattedJid, {
-                text: finalCaption
-            })
-
-            await whatsappService.sendToOwner(sessionName, messageOptions)
-
             console.log(`✅ Mídia enviada com sucesso!`);
 
             return {
                 success: true,
                 messageId: result.key?.id,
                 timestamp: new Date(),
-                InstancePhoneNumber: InstancePhoneNumber
+                InstancePhoneNumber: InstancePhoneNumber,
+                mediaCount: 1,
+                captionIncluded: !!finalCaption
             };
 
         } catch (error) {
@@ -179,7 +190,7 @@ class MediaService {
                 error.message.includes('timeout') ||
                 error.message.includes('stream')
             ) {
-                this.connectionStates.set(sessionName, 'disconnected');
+                whatsappService.connectionStates.set(sessionName, 'disconnected');
             }
 
             return {
@@ -188,6 +199,112 @@ class MediaService {
             };
         }
     }
+
+    // ✅ NOVO MÉTODO: ENVIAR MULTIPLAS MÍDIAS COM CAPTION ÚNICO
+    
+    async sendMultipleMediaWithSingleCaption(socket, jid, mediaItems, caption, sessionName, InstancePhoneNumber, options) {
+        const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+        const results = [];
+
+        console.log(`📦 Enviando ${mediaItems.length} mídias para ${jid} com caption único`);
+
+        // ✅ PASSO 1: ENVIAR TODAS AS MÍDIAS (SEM CAPTION)
+        for (let i = 0; i < mediaItems.length; i++) {
+            const media = mediaItems[i];
+
+            if (!media?.url || !media?.mimeType) {
+                console.warn(`⚠️ Mídia ${i + 1} inválida, pulando...`);
+                continue;
+            }
+
+            const mediaUrl = `${BASE_URL}${media.url}`;
+            console.log(`🖼️ [${i + 1}/${mediaItems.length}] Tipo: ${media.mimeType}`);
+
+            let messageOptions = {};
+
+            // Criar mensagem SEM caption
+            if (!options.sendAsDocument) {
+                if (media.mimeType.startsWith('image/')) {
+                    messageOptions = {
+                        image: { url: mediaUrl },
+                        mimetype: media.mimeType
+                    };
+                } else if (media.mimeType.startsWith('video/')) {
+                    messageOptions = {
+                        video: { url: mediaUrl },
+                        mimetype: media.mimeType
+                    };
+                } else if (media.mimeType.startsWith('audio/')) {
+                    messageOptions = {
+                        audio: { url: mediaUrl },
+                        ptt: false,
+                        mimetype: media.mimeType
+                    };
+                } else {
+                    messageOptions = {
+                        document: { url: mediaUrl },
+                        mimetype: media.mimeType,
+                        fileName: media.originalName
+                    };
+                }
+            } else {
+                messageOptions = {
+                    document: { url: mediaUrl },
+                    mimetype: media.mimeType,
+                    fileName: media.originalName
+                };
+            }
+
+            console.log(`🚀 Enviando mídia ${i + 1}/${mediaItems.length}`);
+
+            const result = await socket.sendMessage(jid, messageOptions, {
+                additionalAttributes: { origin: 'device' }
+            });
+
+            results.push(result);
+
+            // ✅ Pequeno delay entre mídias (para evitar bloqueio)
+            if (i < mediaItems.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+        }
+
+        // ✅ PASSO 2: ENVIAR CAPTION COMO MENSAGEM SEPARADA (APÓS TODAS AS MÍDIAS)
+        if (caption && caption.trim() !== '') {
+            console.log(`📝 Enviando caption único após ${mediaItems.length} mídias`);
+
+            await socket.sendMessage(jid, {
+                text: caption
+            }, {
+                additionalAttributes: { origin: 'device' }
+            });
+
+            // Marcar que caption foi enviado
+            results.push({ key: { id: 'caption_sent' } });
+        }
+
+        // ✅ PASSO 3: SINCRONIZAR (opcional)
+        await socket.sendMessage(socket.user.id, {
+            deviceSync: {
+                critical_unblock_low: 1
+            }
+        }).catch(err => {
+            console.warn("⚠️ Falha ao sincronizar:", err.message);
+        });
+
+        console.log(`✅ ${mediaItems.length} mídia(s) enviada(s) com caption único`);
+
+        return {
+            success: true,
+            messageIds: results.filter(r => r.key?.id !== 'caption_sent').map(r => r.key?.id),
+            timestamp: new Date(),
+            InstancePhoneNumber: InstancePhoneNumber,
+            mediaCount: mediaItems.length,
+            captionSent: !!caption,
+            method: 'batch_with_separate_caption'
+        };
+    }
+
 
     // ✅ PREPARAR OPÇÕES DE MENSAGEM
     prepareMessageOptions(mediaItem, caption, options) {

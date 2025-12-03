@@ -599,6 +599,188 @@ class ContactGroups {
         }
     }
 
+    // 
+
+    async addContactInGroup(name, phone) {
+        if (!authInstance) return;
+
+        try {
+            // 1. Buscar grupos
+            const response = await fetch('/api/contact-groups?limit=100', {
+                headers: authInstance.getAuthHeaders()
+            });
+            const groups = await response.json();
+
+            if (!groups.contactGroups || groups.contactGroups.length === 0) {
+                authInstance.showNotification('Nenhum grupo encontrado', 'warning');
+                return;
+            }
+
+            // 2. Mostrar modal para escolha do grupo
+            const selectedGroup = await this.showGroupSelectionModal(groups.contactGroups);
+
+            if (!selectedGroup) {
+                // Usuário cancelou
+                return;
+            }
+
+            // 3. Adicionar contato ao grupo escolhido
+            await this.addContactToGroup(selectedGroup, name, phone);
+
+        } catch (error) {
+            authInstance.showNotification(error.message, 'error');
+        }
+    }
+
+    // Função para mostrar modal de seleção
+    async showGroupSelectionModal(groups) {
+        return new Promise((resolve) => {
+            // Criar modal com classes específicas
+            const modalHTML = `
+            <div id="contactGroupModal" class="cg-modal__overlay">
+                <div class="cg-modal__container">
+                    <div class="cg-modal__header">
+                        <h3 class="cg-modal__title">Selecionar Grupo</h3>
+                        <button class="cg-modal__close-btn">&times;</button>
+                    </div>
+                    <div class="cg-modal__body">
+                        <div class="cg-groups__list">
+                            ${groups.map(group => `
+                                <div class="cg-group__item" data-group-id="${group.id}">
+                                    <div class="cg-group__header">
+                                        <span class="cg-group__name">${group.name}</span>
+                                        <span class="cg-group__count">
+                                            ${group.contacts ? group.contacts.length : 0} contatos
+                                        </span>
+                                    </div>
+                                    // ${group.description ? `
+                                    //     <div class="cg-group__description">
+                                    //         ${group.description}
+                                    //     </div>
+                                    // ` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div class="cg-modal__footer">
+                        <button class="cg-btn cg-btn--secondary cg-modal__cancel-btn">
+                            Cancelar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+            // Adicionar modal ao DOM
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            const modal = document.getElementById('contactGroupModal');
+
+            // Configurar eventos
+            const closeModal = () => {
+                modal.remove();
+                resolve(null); // Retorna null se cancelado
+            };
+
+            // Evento de seleção
+            modal.querySelectorAll('.cg-group__item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const groupId = item.dataset.groupId;
+                    const selectedGroup = groups.find(g => g.id === groupId);
+                    modal.remove();
+                    resolve(selectedGroup);
+                });
+            });
+
+            // Eventos de fechar
+            modal.querySelector('.cg-modal__close-btn').addEventListener('click', closeModal);
+            modal.querySelector('.cg-modal__cancel-btn').addEventListener('click', closeModal);
+
+            // Fechar ao clicar fora
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
+        });
+    }
+
+    // Função para adicionar contato ao grupo
+    async addContactToGroup(group, name, phone) {
+        const { id: groupId, name: groupName, description = '', contacts = [] } = group;
+
+        // Verificar se contato já existe
+        const contactExists = contacts.some(contact =>
+            contact.phone === phone || contact.name === name
+        );
+
+        if (contactExists) {
+            const confirm = await authInstance.showNotification(
+                'Contato já existe no grupo. Deseja atualizar?',
+                'warning'
+            );
+            if (!confirm) return;
+        }
+
+        try {
+            authInstance.showLoading();
+
+            // Adicionar/atualizar contato
+            const updatedContacts = contactExists
+                ? contacts.map(contact =>
+                    contact.phone === phone ? { ...contact, name } : contact
+                )
+                : [...contacts, { name, phone }];
+
+            const url = `/api/contact-groups/${groupId}`;
+
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: authInstance.getAuthHeaders(),
+                body: JSON.stringify({
+                    groupName,
+                    description,
+                    contacts: updatedContacts
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                authInstance.showNotification(
+                    `Contato ${contactExists ? 'atualizado' : 'adicionado'} com sucesso ao grupo "${groupName}"!`,
+                    'success'
+                );
+
+                // Atualizar visualização se necessário
+                // this.updateGroupView(groupId, updatedContacts);
+
+            } else {
+                throw new Error(data.error || 'Erro ao salvar grupo');
+            }
+        } catch (error) {
+            authInstance.showNotification(error.message, 'error');
+            throw error;
+        } finally {
+            authInstance.hideLoading();
+        }
+    }
+
+    // Função auxiliar para atualizar visualização
+    updateGroupView(groupId, contacts) {
+        const container = document.querySelector("#participantsList");
+        if (!container) return;
+
+        // Adicionar classes específicas para contatos
+        container.innerHTML = contacts.map(contact =>
+            `<div class="cg-contact__item">
+            <span class="cg-contact__name">${contact.name}</span>
+            <span class="cg-contact__phone">${contact.phone}</span>
+        </div>`
+        ).join('');
+    }
+
+
+
     async editGroup(groupId) {
         try {
             if (!authInstance) return;
@@ -889,7 +1071,7 @@ class WhatsAppManager {
                 }
 
                 // Se estiver aguardando QR Code, tentar obtê-lo
-               else   {
+                else {
                     const qrData = await this._fetchJson(`/api/whatsapp/instances/${instanceId}/qrcode`);
 
                     if (qrData && qrData.qrCode) {
@@ -2074,6 +2256,7 @@ class ParticipantsManager {
         this.totalPages = 1;
         this.allParticipants = [];
         this.filteredParticipants = [];
+        this.currentFilters = {}; // Para armazenar filtros atuais
     }
 
     init() {
@@ -2102,7 +2285,11 @@ class ParticipantsManager {
         const searchInput = document.getElementById('participantSearch');
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
-                this.filterParticipants(e.target.value);
+                // Usar debounce para evitar muitas chamadas
+                clearTimeout(this.searchTimeout);
+                this.searchTimeout = setTimeout(() => {
+                    this.applyFilters();
+                }, 300);
             });
         }
 
@@ -2164,6 +2351,11 @@ class ParticipantsManager {
                             instanceFilter.appendChild(option);
                         }
                     });
+
+                    // Manter filtro selecionado se já existir
+                    if (this.currentFilters.instance) {
+                        instanceFilter.value = this.currentFilters.instance;
+                    }
                 }
             }
         } catch (error) {
@@ -2183,6 +2375,13 @@ class ParticipantsManager {
             const instanceFilter = document.getElementById('instanceFilter')?.value;
             const typeFilter = document.getElementById('participantTypeFilter')?.value;
             const search = document.getElementById('participantSearch')?.value;
+
+            // Armazenar filtros atuais
+            this.currentFilters = {
+                instance: instanceFilter,
+                type: typeFilter,
+                search: search
+            };
 
             // Use URLSearchParams para agrupar todos os params (incluindo paginação)
             const params = new URLSearchParams();
@@ -2230,9 +2429,13 @@ class ParticipantsManager {
 
                 this.renderParticipants(this.allParticipants);
 
-                // Atualizar estatísticas
+                // CORREÇÃO DO BUG: Atualizar estatísticas com dados do backend
+                // Se não houver estatísticas na resposta, carregar estatísticas separadamente
                 if (data.statistics) {
                     this.updateStats(data.statistics);
+                } else {
+                    // Carregar estatísticas globalmente se não vierem na resposta
+                    this.loadGlobalStats();
                 }
 
                 this.updatePagination();
@@ -2245,6 +2448,8 @@ class ParticipantsManager {
                 authInstance.showNotification(error.message, 'error');
             }
             this.renderParticipants([]);
+            // Tentar carregar estatísticas mesmo com erro nos participantes
+            this.loadGlobalStats();
         } finally {
             if (authInstance) {
                 authInstance.hideLoading();
@@ -2252,6 +2457,68 @@ class ParticipantsManager {
         }
     }
 
+    // NOVO MÉTODO: Carregar estatísticas globais
+    async loadGlobalStats() {
+        try {
+            const response = await fetch('/api/participants/stats', {
+                headers: authInstance.getAuthHeaders()
+            });
+
+            if (!response.ok) {
+                console.warn('Rota de estatísticas não disponível');
+                // Se não houver rota específica, usar dados locais para estatísticas
+                this.calculateLocalStats();
+                return;
+            }
+
+            const data = await response.json();
+            if (data.success && data.statistics) {
+                this.updateStats(data.statistics);
+            }
+        } catch (error) {
+            console.warn('Erro ao carregar estatísticas:', error);
+            // Calcular estatísticas localmente
+            this.calculateLocalStats();
+        }
+    }
+
+    // NOVO MÉTODO: Calcular estatísticas localmente
+    calculateLocalStats() {
+        if (!this.allParticipants || this.allParticipants.length === 0) {
+            this.updateStats({
+                total: 0,
+                whatsapp: 0,
+                manual: 0,
+                lastSync: null
+            });
+            return;
+        }
+
+        const stats = {
+            total: this.allParticipants.length,
+            whatsapp: this.allParticipants.filter(p => p.source === 'whatsapp').length,
+            manual: this.allParticipants.filter(p => p.source === 'manual').length,
+            lastSync: this.findLatestSyncDate()
+        };
+
+        this.updateStats(stats);
+    }
+
+    // NOVO MÉTODO: Encontrar data da última sincronização
+    findLatestSyncDate() {
+        let latestDate = null;
+
+        this.allParticipants.forEach(participant => {
+            if (participant.updatedAt || participant.lastSync) {
+                const date = new Date(participant.updatedAt || participant.lastSync);
+                if (!latestDate || date > latestDate) {
+                    latestDate = date;
+                }
+            }
+        });
+
+        return latestDate;
+    }
 
     renderParticipants(participants) {
         const container = document.getElementById('participantsList');
@@ -2280,6 +2547,7 @@ class ParticipantsManager {
             const lastActivity = participant.lastActivity || participant.updatedAt;
             const isBusiness = participant.isBusiness || false;
             const isActive = participant.isActive !== undefined ? participant.isActive : true;
+            const totalParticipants = participant.totalParticipants || 1;
 
             return `
                 <div class="list-item" data-id="${id}">
@@ -2312,21 +2580,38 @@ class ParticipantsManager {
                         <button class="btn btn-danger" onclick="app.participants.deleteParticipant('${id}')">
                             <i class="fas fa-trash"></i>
                         </button>
+                        <button class="btn btn-secondary" onclick="app.contactGroups.addContactInGroup('${name}', ${phone})">
+                            <i class="fas fa-edit"></i>
+                        </button>
                     </div>
                 </div>
             `;
         }).join('');
+
+        // Adicionar event listeners para os botões
+        this.attachEventListenersToItems();
+    }
+
+    // NOVO MÉTODO: Anexar event listeners aos itens da lista
+    attachEventListenersToItems() {
+        // Os listeners já estão no onclick, mas podemos melhorar isso
+        // se necessário no futuro
     }
 
     updateStats(stats) {
+        console.log('📊 Atualizando estatísticas:', stats);
+
+        console.log(`stats---->>>>${JSON.stringify(stats.whatsappContacts)}`)
+
         const totalElem = document.getElementById('totalParticipants');
         const whatsappElem = document.getElementById('whatsappParticipants');
         const manualElem = document.getElementById('manualParticipants');
         const lastSyncElem = document.getElementById('lastSync');
 
-        if (totalElem) totalElem.textContent = stats.total || 0;
-        if (whatsappElem) whatsappElem.textContent = stats.whatsapp || 0;
-        if (manualElem) manualElem.textContent = stats.manual || 0;
+
+        if (totalElem) totalElem.textContent = stats.totalContacts || 0;
+        if (whatsappElem) whatsappElem.textContent = stats.whatsappContacts || 0;
+        if (manualElem) manualElem.textContent = stats.manualContacts || 0;
 
         if (lastSyncElem) {
             lastSyncElem.textContent = stats.lastSync
@@ -2448,8 +2733,7 @@ class ParticipantsManager {
 
         const name = nameInput.value.trim();
         const phone = phoneInput.value.trim();
-        const source = 'manual'
-        // const source = sourceInput ? sourceInput.value : 'manual';
+        const source = sourceInput ? sourceInput.value : 'manual';
         const notes = notesInput ? notesInput.value.trim() : '';
 
         if (!name || !phone) {
@@ -2563,6 +2847,8 @@ class ParticipantsManager {
                     (p.id !== participantId) && (p._id !== participantId)
                 );
                 this.renderParticipants(this.allParticipants);
+                // Atualizar estatísticas após remover localmente
+                this.calculateLocalStats();
                 authInstance.showNotification('Contato removido localmente', 'info');
             }
         } catch (error) {
@@ -2642,11 +2928,12 @@ class ParticipantsManager {
             authInstance.showLoading();
 
             // Usar a rota específica para grupos do participante
-            const response = await fetch(`/api/participants/${participantId}/groups`, {
+            const response = await fetch(`/api/participants/${participantId}`, {
                 headers: authInstance.getAuthHeaders()
             });
 
             const data = await response.json();
+            console.log(`groups ${JSON.stringify(data)}`)
 
             if (data.success) {
                 const groups = data.groups || [];
@@ -2672,6 +2959,7 @@ class ParticipantsManager {
     }
 
     showGroupsModal(groups, participantId) {
+        console.log(`grupos ${groups}`)
         const modalHTML = `
             <div id="participantGroupsModal" class="modal">
                 <div class="modal-content" style="max-width: 600px;">
@@ -2884,23 +3172,23 @@ class App {
         });
     }
 
-    debugWhatsAppSection() {
-        console.log('=== DEBUG WHATSAPP SECTION ===');
-        console.log('Current section:', this.currentSection);
-        console.log('WhatsAppManager:', this.whatsappManager);
-        console.log('Auth:', this.auth);
+    // debugWhatsAppSection() {
+    //     console.log('=== DEBUG WHATSAPP SECTION ===');
+    //     console.log('Current section:', this.currentSection);
+    //     console.log('WhatsAppManager:', this.whatsappManager);
+    //     console.log('Auth:', this.auth);
 
-        const addInstanceBtn = document.getElementById('addInstanceBtn');
-        console.log('Add Instance Button:', addInstanceBtn);
+    //     const addInstanceBtn = document.getElementById('addInstanceBtn');
+    //     console.log('Add Instance Button:', addInstanceBtn);
 
-        const instanceModal = document.getElementById('instanceModal');
-        console.log('Instance Modal:', instanceModal);
+    //     const instanceModal = document.getElementById('instanceModal');
+    //     console.log('Instance Modal:', instanceModal);
 
-        const whatsappSection = document.getElementById('whatsappSection');
-        console.log('WhatsApp Section active:', whatsappSection?.classList.contains('active'));
+    //     const whatsappSection = document.getElementById('whatsappSection');
+    //     console.log('WhatsApp Section active:', whatsappSection?.classList.contains('active'));
 
-        console.log('=== END DEBUG ===');
-    }
+    //     console.log('=== END DEBUG ===');
+    // }
 
     setupErrorHandling() {
         window.addEventListener('error', (event) => {
@@ -3094,49 +3382,49 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // No final do arquivo app.js
-window.debugWhatsApp = {
-    testDelete: async function (instanceId) {
-        if (!instanceId) {
-            // Buscar primeira instância
-            const instances = await fetch('/api/whatsapp/instances', {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
-            }).then(r => r.json());
+// window.debugWhatsApp = {
+//     testDelete: async function (instanceId) {
+//         if (!instanceId) {
+//             // Buscar primeira instância
+//             const instances = await fetch('/api/whatsapp/instances', {
+//                 headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+//             }).then(r => r.json());
 
-            if (instances.success && instances.instances.length > 0) {
-                instanceId = instances.instances[0]._id;
-                console.log('Usando instância:', instances.instances[0]);
-            }
-        }
+//             if (instances.success && instances.instances.length > 0) {
+//                 instanceId = instances.instances[0]._id;
+//                 console.log('Usando instância:', instances.instances[0]);
+//             }
+//         }
 
-        if (instanceId && window.app && window.app.whatsappManager) {
-            console.log('Testando delete para ID:', instanceId);
-            await window.app.whatsappManager.deleteInstance(instanceId);
-        }
-    },
+//         if (instanceId && window.app && window.app.whatsappManager) {
+//             console.log('Testando delete para ID:', instanceId);
+//             await window.app.whatsappManager.deleteInstance(instanceId);
+//         }
+//     },
 
-    testCreate: async function () {
-        if (window.app && window.app.whatsappManager) {
-            const testName = 'test-' + Date.now();
-            console.log('Testando criação:', testName);
+//     testCreate: async function () {
+//         if (window.app && window.app.whatsappManager) {
+//             const testName = 'test-' + Date.now();
+//             console.log('Testando criação:', testName);
 
-            // Simular criação
-            const response = await fetch('/api/whatsapp/instances', {
-                method: 'POST',
-                headers: window.app.auth.getAuthHeaders(),
-                body: JSON.stringify({ sessionName: testName })
-            });
+//             // Simular criação
+//             const response = await fetch('/api/whatsapp/instances', {
+//                 method: 'POST',
+//                 headers: window.app.auth.getAuthHeaders(),
+//                 body: JSON.stringify({ sessionName: testName })
+//             });
 
-            const data = await response.json();
-            console.log('Resultado criação:', data);
-        }
-    },
+//             const data = await response.json();
+//             console.log('Resultado criação:', data);
+//         }
+//     },
 
-    listInstances: async function () {
-        const instances = await fetch('/api/whatsapp/instances', {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
-        }).then(r => r.json());
+//     listInstances: async function () {
+//         const instances = await fetch('/api/whatsapp/instances', {
+//             headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+//         }).then(r => r.json());
 
-        console.log('Instâncias:', instances);
-        return instances;
-    }
-};
+//         console.log('Instâncias:', instances);
+//         return instances;
+//     }
+// };

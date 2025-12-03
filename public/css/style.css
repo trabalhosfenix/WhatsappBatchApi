@@ -2416,3 +2416,302 @@ select option {
 form#groupForm .form-actions {
     margin-top:60px
 }
+
+/* ============================================
+   MODAL DE SELEÇÃO DE GRUPOS
+   Prefixo: cg- (contact-groups)
+   ============================================ */
+
+/* Overlay do Modal */
+.cg-modal__overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    backdrop-filter: blur(4px);
+    animation: cg-modal-fade-in 0.3s ease-out;
+}
+
+/* Container Principal do Modal */
+.cg-modal__container {
+    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+    border-radius: 16px;
+    width: 95%;
+    max-width: 500px;
+    max-height: 85vh;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    border: 1px solid #e2e8f0;
+    animation: cg-modal-slide-up 0.4s ease-out;
+}
+
+/* Cabeçalho do Modal */
+.cg-modal__header {
+    padding: 24px 32px;
+    border-bottom: 2px solid #f1f5f9;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #ffffff;
+}
+
+.cg-modal__title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    letter-spacing: -0.025em;
+}
+
+/* Botão Fechar */
+.cg-modal__close-btn {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #64748b;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.cg-modal__close-btn:hover {
+    background-color: #f1f5f9;
+    color: #475569;
+    transform: rotate(90deg);
+}
+
+/* Corpo do Modal */
+.cg-modal__body {
+    padding: 24px 32px;
+    overflow-y: auto;
+    max-height: calc(85vh - 140px);
+}
+
+/* Lista de Grupos */
+.cg-groups__list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Item de Grupo */
+.cg-group__item {
+    padding: 20px;
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.cg-group__item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: linear-gradient(to bottom, #3b82f6, #8b5cf6);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.cg-group__item:hover {
+    border-color: #3b82f6;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(59, 130, 246, 0.1);
+}
+
+.cg-group__item:hover::before {
+    opacity: 1;
+}
+
+/* Cabeçalho do Grupo */
+.cg-group__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.cg-group__name {
+    font-weight: 700;
+    font-size: 1.125rem;
+    color: #1e293b;
+    letter-spacing: -0.025em;
+}
+
+.cg-group__count {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #3b82f6;
+    background-color: #eff6ff;
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid #dbeafe;
+}
+
+/* Descrição do Grupo */
+.cg-group__description {
+    font-size: 0.9375rem;
+    color: #64748b;
+    line-height: 1.5;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #e2e8f0;
+}
+
+/* Rodapé do Modal */
+.cg-modal__footer {
+    padding: 20px 32px;
+    border-top: 2px solid #f1f5f9;
+    background-color: #f8fafc;
+    text-align: right;
+}
+
+/* Botões */
+.cg-btn {
+    padding: 10px 24px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    letter-spacing: 0.025em;
+}
+
+.cg-btn--secondary {
+    background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+    color: white;
+    border: 2px solid transparent;
+}
+
+.cg-btn--secondary:hover {
+    background: linear-gradient(135deg, #475569 0%, #334155 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(100, 116, 139, 0.2);
+}
+
+.cg-btn--secondary:active {
+    transform: translateY(0);
+}
+
+/* Estilos para Lista de Contatos */
+.cg-contact__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    transition: all 0.2s ease;
+}
+
+.cg-contact__item:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+}
+
+.cg-contact__name {
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 1rem;
+}
+
+.cg-contact__phone {
+    color: #64748b;
+    font-size: 0.9375rem;
+    font-family: 'Monaco', 'Menlo', monospace;
+    background-color: #f8fafc;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+}
+
+/* Animações */
+@keyframes cg-modal-fade-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes cg-modal-slide-up {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Scrollbar Personalizada */
+.cg-modal__body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.cg-modal__body::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+
+.cg-modal__body::-webkit-scrollbar-thumb {
+    background: linear-gradient(to bottom, #c7d2fe, #93c5fd);
+    border-radius: 4px;
+}
+
+.cg-modal__body::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(to bottom, #a5b4fc, #60a5fa);
+}
+
+/* Responsividade */
+@media (max-width: 640px) {
+    .cg-modal__container {
+        width: 95%;
+        margin: 20px;
+        max-height: 90vh;
+    }
+    
+    .cg-modal__header,
+    .cg-modal__body,
+    .cg-modal__footer {
+        padding: 20px;
+    }
+    
+    .cg-group__header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .cg-group__count {
+        align-self: flex-start;
+    }
+    
+    .cg-contact__item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+}

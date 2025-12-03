@@ -218,10 +218,14 @@ class WhatsAppService {
             // ✅ SALVAR CREDENCIS CORRETAMENTE
             socket.ev.on('creds.update', saveCreds);
 
-            socket.ev.on("messages.upsert", (data) => {
-                this.handleMessages(sessionName, data);
-            });
+            // socket.ev.on("messages.upsert", (data) => {
+            //     this.handleMessages(sessionName, data);
+            // });
             // ✅ CONFIGURAR EVENTOS
+        //    tracker = new MessageTracker();
+        //    tracker.enableTracking(sessionName, socket);
+
+
             this.setupBaileysEvents(socket, sessionName, instanceId, userId, saveCreds);
 
             // ✅ SALVAR NO GERENCIADOR
@@ -502,14 +506,15 @@ class WhatsAppService {
         const userId = instanceMeta.userId;
 
         for (const msg of messages) {
-            console.log(`📩 [${sessionName}] Mensagem recebida:`, JSON.stringify(msg));
+           
 
             if (msg.key.remoteJid === 'status@broadcast') {
                 console.log(`ℹ️ [${sessionName}] Mensagem de status ignorada`);
                 return;
             }
 
-            const participantInfo = this.extractParticipantInfo(msg);
+            const participantInfo = this.extractParticipantInfo(msg, sessionName);
+             console.log(`📩 [${sessionName}] Mensagem recebida:`, JSON.stringify(participantInfo));
 
             if (participantInfo) {
                 try {
@@ -525,11 +530,11 @@ class WhatsAppService {
     }
 
     // Função auxiliar para extrair informações do participante
-    extractParticipantInfo(msg) {
+    async extractParticipantInfo(msg, sessionName) {
         try {
             const remoteJid = msg.key?.remoteJid;
             const fromGroup = remoteJid?.includes('@g.us') || remoteJid?.includes('newsletter');
-           
+
             // if (fromGroup) extractGroupInfo( msg.key?.remoteJid)
 
             let jid = fromGroup ? msg.key?.participant : remoteJid;
@@ -538,21 +543,26 @@ class WhatsAppService {
             let phone = '';
             let participantType = 'whatsapp';
 
+
+
             // ✅ DETECTAR TIPO DE PARTICIPANTE
             if (jid.includes('@lid')) {
                 // LinkedIn ID - usar participantAlt se disponível
                 participantType = 'linkedin';
                 if (msg.key?.participantAlt) {
-                    phone =  msg.key.participantAlt.replace('@s.whatsapp.net', '')
-                   
+                    phone = msg.key.participantAlt.replace('@s.whatsapp.net', '')
+
                 } else {
                     phone = jid.replace('@lid', '');
                 }
             } else {
                 // WhatsApp normal
                 phone = jid.replace('@s.whatsapp.net', '').replace('@c.us', '')
-                
+
             }
+
+            // const instance = this.sockets.get(msg.info?.sessionName);
+            // const picture = await this.getProfilePicture(sessionName, jid);
 
             const pushName = msg.pushName || msg.notifyName || verifiedBizName;
 
@@ -561,6 +571,7 @@ class WhatsAppService {
                 phoneNumber: phone,
                 pushName: pushName.trim(),
                 remoteJid: remoteJid,
+                // picture : picture || "",
                 participantType: participantType // ✅ novo campo para identificar tipo
             };
 
@@ -1387,7 +1398,7 @@ class WhatsAppService {
             const socket = this.sockets.get(sessionName);
             if (!socket) return null;
 
-            const profilePic = await socket.getProfilePicture(contactId);
+            const profilePic = await socket.getProfilePicture(sessionName,contactId);
             return profilePic || null;
         } catch (error) {
             // Foto não disponível é comum, não logar como erro
@@ -1453,7 +1464,7 @@ class WhatsAppService {
 
                 // Testar métodos
                 try {
-                    const profilePic = await socket.getProfilePicture(sampleContact.id._serialized);
+                    const profilePic = await socket.getProfilePicture(sessionName, sampleContact.id._serialized);
                     console.log('🖼️ Foto disponível:', !!profilePic);
                 } catch (error) {
                     console.log('🖼️ Foto:', error.message);

@@ -1,5 +1,6 @@
 // services/whatsapp/MessageTracker.js
 const EventEmitter = require('events');
+const whatsappService = require('./whatsappService');
 
 class MessageTracker extends EventEmitter {
     constructor() {
@@ -17,7 +18,7 @@ class MessageTracker extends EventEmitter {
         
         // Configurar handler de mensagens no socket
         socket.ev.on("messages.upsert", async ({ messages, type }) => {
-            await this.handleIncomingMessage(sessionName, socket, messages, type);
+            await whatsappService.handleMessages(sessionName, socket, messages, type);
         });
 
         this.emit('trackingEnabled', { sessionName, options });

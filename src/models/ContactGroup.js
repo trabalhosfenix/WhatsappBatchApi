@@ -90,6 +90,10 @@ const contactSchema = new mongoose.Schema({
   lastInteraction: {
     type: Date,
     default: Date.now
+  },
+  raster:{
+    type: Boolean,
+    default: false
   }
 }, { 
   timestamps: true 
