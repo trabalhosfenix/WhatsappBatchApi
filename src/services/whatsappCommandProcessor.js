@@ -64,6 +64,8 @@ class WhatsAppCommandProcessor {
           return this.whatsappService.reconnectInstance(job.data.sessionName, job.data.userId);
         case 'disconnect':
           return this.whatsappService.disconnectClient(job.data.sessionName);
+        case 'delete':
+          return this.whatsappService.deleteInstance(job.data.sessionName);
         default:
           throw new Error(`Comando não suportado: ${job.name}`);
       }

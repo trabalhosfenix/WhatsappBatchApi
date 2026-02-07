@@ -28,6 +28,8 @@ Foi adicionado um blueprint técnico com fases de implantação, contratos de fi
    REDIS_URL=redis://localhost:6379
    WORKER_NODE_ID=api-node-1
    WORKER_NODE_LIST=api-node-1,api-node-2
+   QUEUE_FIRST_MODE=true
+   SHARED_SESSIONS_PATH=/mnt/efs/whatsapp-sessions
    ```
 3. Rode a API:
    ```bash
@@ -49,6 +51,12 @@ Roteamento determinístico de ownership (Fase 2.2):
 - owner da sessão é resolvido por hash determinístico (`userId:sessionName`)
 - comandos são publicados na fila por owner: `whatsapp.commands.<ownerNode>`
 - cada worker consome apenas sua fila e valida ownership antes de executar
+
+Fase 2.3 (queue-first em produção):
+- com `QUEUE_FIRST_MODE=true`, comandos de ciclo de vida são bloqueados fora da fila quando `REDIS_URL` está ativa
+
+Fase 3.1 (provider de sessão compartilhada):
+- sessões Baileys usam provider via `SHARED_SESSIONS_PATH` (EFS/NFS recomendado em produção)
 
 ## Base URL
 - Local: `http://localhost:3000`

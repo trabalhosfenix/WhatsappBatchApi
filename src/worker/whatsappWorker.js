@@ -1,4 +1,5 @@
 require('dotenv').config();
+process.env.IS_WHATSAPP_WORKER = 'true';
 const connectDB = require('../config/database');
 const whatsappService = require('../services/whatsappService');
 const WhatsAppCommandProcessor = require('../services/whatsappCommandProcessor');
