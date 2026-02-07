@@ -181,7 +181,7 @@ Fila principal: `whatsapp.commands`
 
 ## Fase 3 — Sessão compartilhada + failover
 
-- [ ] Migrar `auth_sessions` para storage compartilhado.
+- [x] Migrar `auth_sessions` para storage compartilhado.
 - [x] Provider de sessão compartilhada inicial (`SHARED_SESSIONS_PATH`).
 - [x] Bootstrap automático após restart de worker.
 - [x] Reclaim de sessão ao detectar owner offline.

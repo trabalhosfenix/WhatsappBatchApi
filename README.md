@@ -46,6 +46,12 @@ Quando `REDIS_URL` estiver configurada, os comandos de `connect/recover/disconne
 npm run worker:whatsapp
 ```
 
+Para migrar sessões locais antigas para o storage compartilhado:
+
+```bash
+npm run migrate:sessions
+```
+
 Sem `REDIS_URL`, a API mantém fallback para execução local em memória.
 
 Roteamento determinístico de ownership (Fase 2.2):
