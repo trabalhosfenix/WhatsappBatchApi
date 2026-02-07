@@ -2,6 +2,7 @@ const ContactGroup = require('../models/ContactGroup');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const whatsappBaileysService = require('../services/whatsappService');
 const messageControlService = require('../services/messageControlService');
+const whatsappCommandQueue = require('../services/whatsappCommandQueue');
 const fs = require('fs');
 const path = require('path');
 
@@ -40,20 +41,27 @@ exports.createInstance = async (req, res) => {
 
     console.log(`🚀 [Baileys] Criando instância: ${sessionName}`);
 
+    if (whatsappCommandQueue.isEnabled()) {
+      const enqueueResult = await whatsappCommandQueue.enqueue('connect', {
+        sessionName,
+        userId: String(req.user._id)
+      });
+
+      return res.status(202).json({
+        success: true,
+        queued: true,
+        command: 'connect',
+        jobId: enqueueResult.jobId,
+        message: 'Comando de conexão enfileirado. Aguarde e consulte o status da instância.'
+      });
+    }
+
     const instance = await whatsappBaileysService.createClient(sessionName, req.user._id);
     const updatedInstance = await WhatsAppInstance.findById(instance._id);
 
-    // setTimeout(async () => {
-    //   try {
-    //     await messageControlService.enableMessageTracking(sessionName);
-    //     console.log(`✅ Tracking ativado automaticamente para: ${sessionName}`);
-    //   } catch (trackingError) {
-    //     console.error(`❌ Erro no tracking automático:`, trackingError);
-    //   }
-    // }, 3000);
-
     res.status(201).json({
       success: true,
+      queued: false,
       instance: {
         _id: updatedInstance._id,
         sessionName: updatedInstance.sessionName,
@@ -501,6 +509,28 @@ exports.recoverInstance = async (req, res) => {
       });
     }
 
+    if (whatsappCommandQueue.isEnabled()) {
+      const enqueueResult = await whatsappCommandQueue.enqueue('recover', {
+        sessionName: instance.sessionName,
+        userId: String(req.user._id)
+      });
+
+      return res.status(202).json({
+        success: true,
+        queued: true,
+        command: 'recover',
+        jobId: enqueueResult.jobId,
+        message: 'Recuperação enfileirada. Aguarde e atualize o status.',
+        instance: {
+          _id: instance._id,
+          sessionName: instance.sessionName,
+          status: 'connecting',
+          sessionPersisted: true,
+          canAttemptRecovery: true
+        }
+      });
+    }
+
     await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
 
     res.json({
@@ -539,12 +569,28 @@ exports.disconnectInstance = async (req, res) => {
       });
     }
 
+    if (whatsappCommandQueue.isEnabled()) {
+      const enqueueResult = await whatsappCommandQueue.enqueue('disconnect', {
+        sessionName: instance.sessionName,
+        userId: String(req.user._id)
+      });
+
+      return res.status(202).json({
+        success: true,
+        queued: true,
+        command: 'disconnect',
+        jobId: enqueueResult.jobId,
+        message: 'Comando de desconexão enfileirado com sucesso'
+      });
+    }
+
     await whatsappBaileysService.disconnectClient(instance.sessionName);
 
     console.log(`✅ Instância desconectada: ${instance.sessionName}`);
 
     res.json({
       success: true,
+      queued: false,
       message: 'Instância desconectada com sucesso'
     });
   } catch (error) {

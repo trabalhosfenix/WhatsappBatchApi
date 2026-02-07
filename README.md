@@ -33,6 +33,17 @@ Foi adicionado um blueprint técnico com fases de implantação, contratos de fi
    npm run dev
    ```
 
+
+## Worker de comandos WhatsApp (Fase 2 inicial)
+
+Quando `REDIS_URL` estiver configurada, os comandos de `connect/recover/disconnect` podem ser enfileirados em `whatsapp.commands` e consumidos por um processo dedicado:
+
+```bash
+npm run worker:whatsapp
+```
+
+Sem `REDIS_URL`, a API mantém fallback para execução local em memória.
+
 ## Base URL
 - Local: `http://localhost:3000`
 - Health check: `GET /health`
