@@ -10,10 +10,10 @@ const {
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const ContactGroup = require('../models/ContactGroup');
 const qrcode = require('qrcode');
-const fs = require('fs');
-const path = require('path');
 const { handleMessage } = require("../controllers/messageController.js")
 const distributedLockService = require('./distributedLockService');
+const sessionStorageProvider = require('./sessionStorageProvider');
+const instanceMetricsService = require('./instanceMetricsService');
 
 // Logger silencioso como no bot que funciona
 const baileysLogger = {
@@ -42,6 +42,8 @@ class WhatsAppService {
         this.connectionStates = new Map(); // Novo: controle de estado
         this.sessionLocks = new Map();
         this.workerNodeId = process.env.WORKER_NODE_ID || process.env.HOSTNAME || 'api-node';
+        this.queueFirstMode = process.env.QUEUE_FIRST_MODE === 'true' || process.env.NODE_ENV === 'production';
+        this.isWorkerProcess = process.env.IS_WHATSAPP_WORKER === 'true';
     }
 
     async withSessionLock(sessionName, operation) {
@@ -64,8 +66,42 @@ class WhatsAppService {
 
 
 
+
+    assertLifecycleExecutionAllowed(action) {
+        if (this.queueFirstMode && !this.isWorkerProcess && process.env.REDIS_URL) {
+            throw new Error(`Ação ${action} bloqueada no processo API em modo queue-first. Use fila/worker dedicado.`);
+        }
+    }
+
     async updateOperationalState(instanceId, updates = {}) {
         try {
+            const previous = await WhatsAppInstance.findById(instanceId).select('connectionState lastErrorCode');
+
+            if (updates.connectionState === 'connecting') {
+                await instanceMetricsService.setConnectStart(String(instanceId), Date.now());
+            }
+
+            if (updates.connectionState === 'connected' && previous?.connectionState !== 'connected') {
+                await instanceMetricsService.increment(String(instanceId), 'connect_count', 1);
+                const snapshot = await instanceMetricsService.getSnapshot(String(instanceId));
+                if (snapshot.last_connect_started_at_ms) {
+                    const duration = Math.max(0, Date.now() - snapshot.last_connect_started_at_ms);
+                    await instanceMetricsService.increment(String(instanceId), 'total_connect_time_ms', duration);
+                }
+            }
+
+            if (updates.connectionState === 'reconnecting') {
+                await instanceMetricsService.increment(String(instanceId), 'reconnect_count', 1);
+            }
+
+            if (updates.connectionState === 'qr') {
+                await instanceMetricsService.increment(String(instanceId), 'qr_refresh_count', 1);
+            }
+
+            if (updates.lastErrorCode === '401' && previous?.lastErrorCode !== '401') {
+                await instanceMetricsService.increment(String(instanceId), 'auth_401_count', 1);
+            }
+
             await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                 ...updates,
                 ownerNode: this.workerNodeId,
@@ -93,10 +129,9 @@ class WhatsAppService {
 
     removeSessionFiles(sessionName) {
         try {
-            const sessionDir = path.join(__dirname, '..', 'auth_sessions', sessionName);
-            if (fs.existsSync(sessionDir)) {
-                fs.rmSync(sessionDir, { recursive: true, force: true });
-                console.log(`🧽 [${sessionName}] Sessão local removida após logout/401`);
+            const removed = sessionStorageProvider.removeSession(sessionName);
+            if (removed) {
+                console.log(`🧽 [${sessionName}] Sessão removida após logout/401`);
             }
         } catch (error) {
             console.warn(`⚠️ [${sessionName}] Falha ao remover sessão local: ${error.message}`);
@@ -117,6 +152,7 @@ class WhatsAppService {
     }
 
     async deleteInstance(sessionName) {
+        this.assertLifecycleExecutionAllowed('deleteInstance');
         console.log(`🗑️ Deletando instância WhatsApp: ${sessionName}`);
 
         try {
@@ -142,10 +178,9 @@ class WhatsAppService {
             this.connectionStates.delete(sessionName);
 
             // Remover arquivos de sessão
-            const sessionDir = path.join(__dirname, '..', 'auth_sessions', sessionName);
-            if (fs.existsSync(sessionDir)) {
+            const sessionDir = sessionStorageProvider.getSessionDir(sessionName);
+            if (sessionStorageProvider.removeSession(sessionName)) {
                 console.log(`🗂️ Removendo diretório de sessão: ${sessionDir}`);
-                fs.rmSync(sessionDir, { recursive: true, force: true });
             }
 
             // Remover do banco
@@ -160,6 +195,7 @@ class WhatsAppService {
     }
 
     async createClient(sessionName, userId) {
+        this.assertLifecycleExecutionAllowed('createClient');
         try {
             console.log(`🔧 [Baileys] Criando cliente: ${sessionName} para usuário: ${userId}`);
 
@@ -225,10 +261,7 @@ class WhatsAppService {
 
         try {
             // Diretório para sessão
-            const authDir = path.join(__dirname, '../auth_sessions', sessionName);
-            if (!fs.existsSync(authDir)) {
-                fs.mkdirSync(authDir, { recursive: true });
-            }
+            const authDir = sessionStorageProvider.ensureSessionDir(sessionName);
 
             // Carregar estado de autenticação
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -364,6 +397,11 @@ class WhatsAppService {
                         } else {
                             console.log(`🚫 [${sessionName}] Sessão inválida (logout/401), reconexão automática desativada`);
                             this.removeSessionFiles(sessionName);
+                            await this.updateOperationalState(instanceId, {
+                                status: 'failed',
+                                connectionState: 'error',
+                                lastErrorCode: '401'
+                            });
                             await this.cleanupInstance(sessionName, instanceId, 'failed');
                         }
                         break;
@@ -493,6 +531,7 @@ class WhatsAppService {
     }
 
     async disconnectClient(sessionName) {
+        this.assertLifecycleExecutionAllowed('disconnectClient');
         try {
             console.log(`🔌 [WhatsAppService] Desconectando: ${sessionName}`);
 
@@ -624,6 +663,7 @@ class WhatsAppService {
     }
 
     async recreateInstance(sessionName, userId) {
+        this.assertLifecycleExecutionAllowed('recreateInstance');
         try {
             console.log(`🔄 [WhatsAppService] Recriando instância: ${sessionName}`);
 
@@ -1056,6 +1096,7 @@ class WhatsAppService {
     // services/whatsappService.js - ADICIONE ESTA FUNÇÃO:
 
     async reconnectInstance(sessionName, userId) {
+        this.assertLifecycleExecutionAllowed('reconnectInstance');
         return this.withSessionLock(sessionName, async () => {
             return this.withDistributedReconnectLock(sessionName, async () => {
             try {

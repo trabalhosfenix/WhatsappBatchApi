@@ -173,6 +173,7 @@ Fila principal: `whatsapp.commands`
 - [x] Criar processo `whatsapp-worker`.
 - [x] API publica comandos na fila.
 - [x] Worker consome e executa com ownership.
+- [x] Queue-first em produção para comandos de ciclo de vida.
 
 ### Critério de aceite
 
@@ -180,9 +181,10 @@ Fila principal: `whatsapp.commands`
 
 ## Fase 3 — Sessão compartilhada + failover
 
-- [ ] Migrar `auth_sessions` para storage compartilhado.
-- [ ] Bootstrap automático após restart de worker.
-- [ ] Reclaim de sessão ao detectar owner offline.
+- [x] Migrar `auth_sessions` para storage compartilhado.
+- [x] Provider de sessão compartilhada inicial (`SHARED_SESSIONS_PATH`).
+- [x] Bootstrap automático após restart de worker.
+- [x] Reclaim de sessão ao detectar owner offline.
 
 ### Critério de aceite
 
@@ -190,8 +192,8 @@ Fila principal: `whatsapp.commands`
 
 ## Fase 4 — Realtime + observabilidade
 
-- [ ] SSE/WebSocket de status e QR.
-- [ ] Métricas por sessão:
+- [x] SSE/WebSocket de status e QR (SSE inicial).
+- [x] Métricas por sessão:
   - connect_time
   - reconnect_rate
   - auth_401_rate

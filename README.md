@@ -28,12 +28,39 @@ Foi adicionado um blueprint técnico com fases de implantação, contratos de fi
    REDIS_URL=redis://localhost:6379
    WORKER_NODE_ID=api-node-1
    WORKER_NODE_LIST=api-node-1,api-node-2
+   QUEUE_FIRST_MODE=true
+   SHARED_SESSIONS_PATH=/mnt/efs/whatsapp-sessions
+   WORKER_HEARTBEAT_TIMEOUT_MS=30000
    ```
 3. Rode a API:
    ```bash
    npm run dev
    ```
 
+
+
+## Redis no ambiente local
+
+### Opção 1: Docker (recomendado)
+```bash
+docker run -d --name whatsapp-redis -p 6379:6379 redis:7-alpine
+```
+
+### Opção 2: Docker Compose completo (API + Worker + Mongo + Redis)
+```bash
+docker compose up -d
+```
+
+Com isso, os serviços sobem com:
+- API em `http://localhost:3000`
+- MongoDB em `localhost:27017`
+- Redis em `localhost:6379`
+
+Para validar Redis:
+```bash
+docker exec -it whatsapp-redis redis-cli ping
+```
+Resposta esperada: `PONG`.
 
 ## Worker de comandos WhatsApp (Fase 2 inicial)
 
@@ -43,12 +70,30 @@ Quando `REDIS_URL` estiver configurada, os comandos de `connect/recover/disconne
 npm run worker:whatsapp
 ```
 
+Para migrar sessões locais antigas para o storage compartilhado:
+
+```bash
+npm run migrate:sessions
+```
+
 Sem `REDIS_URL`, a API mantém fallback para execução local em memória.
 
 Roteamento determinístico de ownership (Fase 2.2):
 - owner da sessão é resolvido por hash determinístico (`userId:sessionName`)
 - comandos são publicados na fila por owner: `whatsapp.commands.<ownerNode>`
 - cada worker consome apenas sua fila e valida ownership antes de executar
+
+Fase 2.3 (queue-first em produção):
+- com `QUEUE_FIRST_MODE=true`, comandos de ciclo de vida são bloqueados fora da fila quando `REDIS_URL` está ativa
+
+Fase 3.1 (provider de sessão compartilhada):
+- sessões Baileys usam provider via `SHARED_SESSIONS_PATH` (EFS/NFS recomendado em produção)
+- worker executa bootstrap automático de recover ao subir quando há sessão persistida
+- ownership stale pode ser reassumido pelo owner determinístico (`WORKER_HEARTBEAT_TIMEOUT_MS`)
+
+Fase 4 (realtime + observabilidade inicial):
+- stream de status por SSE em `GET /api/whatsapp/instances/:id/stream`
+- métricas por sessão em `GET /api/whatsapp/instances/:id/metrics`
 
 ## Base URL
 - Local: `http://localhost:3000`
@@ -111,6 +156,8 @@ curl -X POST http://localhost:3000/api/auth/login \
 - `POST /instances/:id/load-groups`
 - `GET /instances/:id/groups`
 - `GET /instances/:id/status`
+- `GET /instances/:id/stream` (SSE)
+- `GET /instances/:id/metrics`
 
 **Exemplo – Listar instâncias**
 ```bash

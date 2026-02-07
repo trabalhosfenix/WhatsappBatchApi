@@ -46,6 +46,24 @@ class OwnershipService {
     return winner;
   }
 
+  getHeartbeatTimeoutMs() {
+    const value = Number(process.env.WORKER_HEARTBEAT_TIMEOUT_MS || 30000);
+    return Number.isFinite(value) && value > 0 ? value : 30000;
+  }
+
+  isHeartbeatStale(lastHeartbeat) {
+    if (!lastHeartbeat) return true;
+    const elapsed = Date.now() - new Date(lastHeartbeat).getTime();
+    return elapsed > this.getHeartbeatTimeoutMs();
+  }
+
+  canReclaimOwnership({ currentOwner, lastHeartbeat, resolvedOwner, currentWorker }) {
+    if (!currentOwner) return resolvedOwner === currentWorker;
+    if (currentOwner === currentWorker) return true;
+    if (!this.isHeartbeatStale(lastHeartbeat)) return false;
+    return resolvedOwner === currentWorker;
+  }
+
   getQueueNameForOwner(ownerNode) {
     return `whatsapp.commands.${ownerNode}`;
   }

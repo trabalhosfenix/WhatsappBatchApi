@@ -1,5 +1,6 @@
 const whatsappCommandQueue = require('./whatsappCommandQueue');
 const ownershipService = require('./ownershipService');
+const sessionStorageProvider = require('./sessionStorageProvider');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 
 class WhatsAppCommandProcessor {
@@ -24,20 +25,96 @@ class WhatsAppCommandProcessor {
       throw new Error(`Owner inválido no job. Esperado ${ownerNode}, worker atual ${this.workerNodeId}`);
     }
 
+    const instance = await WhatsAppInstance.findOne({ sessionName, userId });
+    if (!instance) {
+      throw new Error(`Instância não encontrada para ${sessionName}`);
+    }
+
     const sessionKey = ownershipService.getSessionKey({ userId, sessionName });
     const resolvedOwner = ownershipService.resolveOwner(sessionKey);
 
-    if (resolvedOwner !== this.workerNodeId) {
-      throw new Error(`Worker ${this.workerNodeId} não é owner da sessão ${sessionName}. Owner atual: ${resolvedOwner}`);
+    const canReclaim = ownershipService.canReclaimOwnership({
+      currentOwner: instance.ownerNode,
+      lastHeartbeat: instance.lastHeartbeat,
+      resolvedOwner,
+      currentWorker: this.workerNodeId
+    });
+
+    if (!canReclaim) {
+      throw new Error(`Worker ${this.workerNodeId} não é owner da sessão ${sessionName}. Owner atual: ${instance.ownerNode || resolvedOwner}`);
     }
 
-    await WhatsAppInstance.findOneAndUpdate(
-      { sessionName, userId },
-      {
+    await WhatsAppInstance.findByIdAndUpdate(instance._id, {
+      ownerNode: this.workerNodeId,
+      lastHeartbeat: new Date()
+    });
+
+    return instance;
+  }
+
+  async recoverOwnedSessionsOnStartup() {
+    const candidates = await WhatsAppInstance.find({
+      $or: [
+        { ownerNode: this.workerNodeId },
+        { ownerNode: null },
+        { lastHeartbeat: { $lt: new Date(Date.now() - ownershipService.getHeartbeatTimeoutMs()) } }
+      ]
+    });
+
+    for (const instance of candidates) {
+      const userId = String(instance.userId);
+      const sessionKey = ownershipService.getSessionKey({ userId, sessionName: instance.sessionName });
+      const resolvedOwner = ownershipService.resolveOwner(sessionKey);
+
+      const canReclaim = ownershipService.canReclaimOwnership({
+        currentOwner: instance.ownerNode,
+        lastHeartbeat: instance.lastHeartbeat,
+        resolvedOwner,
+        currentWorker: this.workerNodeId
+      });
+
+      if (!canReclaim) continue;
+
+      await WhatsAppInstance.findByIdAndUpdate(instance._id, {
         ownerNode: this.workerNodeId,
         lastHeartbeat: new Date()
+      });
+
+      const hasSession = sessionStorageProvider.hasSavedSession(instance.sessionName);
+      const shouldRecover = hasSession && instance.status !== 'connected';
+
+      if (shouldRecover) {
+        const queueName = ownershipService.getQueueNameForOwner(this.workerNodeId);
+        await whatsappCommandQueue.enqueue('recover', {
+          sessionName: instance.sessionName,
+          userId,
+          ownerNode: this.workerNodeId
+        }, {
+          queueName,
+          jobId: `recover:${instance.sessionName}:${instance.version || 1}`
+        });
       }
-    );
+    }
+  }
+
+  async reclaimStaleOwnership() {
+    const stale = await WhatsAppInstance.find({
+      ownerNode: { $ne: this.workerNodeId },
+      lastHeartbeat: { $lt: new Date(Date.now() - ownershipService.getHeartbeatTimeoutMs()) }
+    });
+
+    for (const instance of stale) {
+      const userId = String(instance.userId);
+      const sessionKey = ownershipService.getSessionKey({ userId, sessionName: instance.sessionName });
+      const resolvedOwner = ownershipService.resolveOwner(sessionKey);
+
+      if (resolvedOwner !== this.workerNodeId) continue;
+
+      await WhatsAppInstance.findByIdAndUpdate(instance._id, {
+        ownerNode: this.workerNodeId,
+        lastHeartbeat: new Date()
+      });
+    }
   }
 
   async start() {
@@ -64,6 +141,8 @@ class WhatsAppCommandProcessor {
           return this.whatsappService.reconnectInstance(job.data.sessionName, job.data.userId);
         case 'disconnect':
           return this.whatsappService.disconnectClient(job.data.sessionName);
+        case 'delete':
+          return this.whatsappService.deleteInstance(job.data.sessionName);
         default:
           throw new Error(`Comando não suportado: ${job.name}`);
       }
