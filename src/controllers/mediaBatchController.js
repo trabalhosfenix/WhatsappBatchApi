@@ -73,6 +73,45 @@ class RateLimitService {
 // ✅ INSTÂNCIA GLOBAL DO RATE LIMITER
 const rateLimitService = new RateLimitService();
 
+const scheduledBatchTimers = new Map();
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
+const clearScheduledBatch = (batchId) => {
+  const key = batchId.toString();
+  const timer = scheduledBatchTimers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    scheduledBatchTimers.delete(key);
+  }
+};
+
+const scheduleMediaBatchProcessing = (batchId, scheduledAt) => {
+  const scheduledDate = new Date(scheduledAt);
+  if (Number.isNaN(scheduledDate.getTime())) {
+    throw new Error('Data de agendamento inválida');
+  }
+
+  const key = batchId.toString();
+  clearScheduledBatch(key);
+
+  const run = async () => {
+    const remaining = scheduledDate.getTime() - Date.now();
+    if (remaining > 0) {
+      const timer = setTimeout(run, Math.min(remaining, MAX_TIMEOUT_MS));
+      scheduledBatchTimers.set(key, timer);
+      return;
+    }
+
+    scheduledBatchTimers.delete(key);
+    await processMediaBatch(key);
+  };
+
+  const initialDelay = Math.max(0, Math.min(scheduledDate.getTime() - Date.now(), MAX_TIMEOUT_MS));
+  const timer = setTimeout(run, initialDelay);
+  scheduledBatchTimers.set(key, timer);
+};
+
+
 // ✅ FUNÇÃO AUXILIAR PARA DELAY INTELIGENTE
 const smartDelay = async (instanceId, batchOptions) => {
   const baseDelay = batchOptions?.delayBetweenMessages || 2000;
@@ -110,6 +149,28 @@ const processMediaBatch = async (batchId) => {
       throw new Error('Lote de mídia não encontrado');
     }
 
+    if (batch.status === 'cancelled' || batch.status === 'completed') {
+      console.log(`⏭️ Lote ${batchId} não será processado. Status atual: ${batch.status}`);
+      return;
+    }
+
+    if (batch.scheduledAt && batch.scheduledAt > new Date()) {
+      console.log(`⏰ Lote ${batchId} ainda está agendado para ${batch.scheduledAt.toISOString()}`);
+      scheduleMediaBatchProcessing(batchId, batch.scheduledAt);
+      return;
+    }
+
+    const statusUpdate = await MediaBatch.updateOne(
+      { _id: batchId, status: { $in: ['pending', 'scheduled'] } },
+      { $set: { status: 'processing' } }
+    );
+
+    if (statusUpdate.matchedCount === 0) {
+      console.log(`⏭️ Lote ${batchId} ignorado por status incompatível`);
+      return;
+    }
+
+
     // ✅ DEBUG: VERIFICAR CAPTION NO BATCH DO BANCO
     console.log('🔍 DEBUG - Caption no batch do banco:', {
       batchCaption: batch.caption,
@@ -133,11 +194,6 @@ const processMediaBatch = async (batchId) => {
     if (whatsappInstance.status !== 'connected') {
       throw new Error(`Instância WhatsApp não está conectada. Status atual: ${whatsappInstance.status}`);
     }
-
-    // Atualizar status para processando
-    await MediaBatch.findByIdAndUpdate(batchId, {
-      status: 'processing'
-    });
 
     // ✅ VERIFICAÇÃO ROBUSTA DA CONEXÃO
     let socket = whatsappBaileysService.sockets.get(whatsappInstance.sessionName);
@@ -348,7 +404,7 @@ const createMediaBatch = async (req, res) => {
   console.log('Dados do lote:', req.body);
 
   try {
-    const { name, mediaItems, contactGroupIds, whatsappInstanceId, caption, options } = req.body;
+    const { name, mediaItems, contactGroupIds, whatsappInstanceId, caption, options, scheduledAt } = req.body;
 
     // ✅ DEBUG MELHORADO
     console.log('🔍 Dados recebidos do frontend:', {
@@ -362,6 +418,17 @@ const createMediaBatch = async (req, res) => {
         success: false,
         error: 'Nome, mídias, grupos de contatos e instância WhatsApp são obrigatórios'
       });
+    }
+
+    let parsedScheduledAt = null;
+    if (scheduledAt) {
+      parsedScheduledAt = new Date(scheduledAt);
+      if (Number.isNaN(parsedScheduledAt.getTime())) {
+        return res.status(400).json({
+          success: false,
+          error: 'Data de agendamento inválida'
+        });
+      }
     }
 
     const whatsappInstance = await WhatsAppInstance.findOne({
@@ -414,6 +481,8 @@ const createMediaBatch = async (req, res) => {
     console.log('🔄 Opções finais do batch:', batchOptions);
 
     // ✅ CRIAR BATCH COM CAPTION NO NÍVEL PRINCIPAL E NAS OPTIONS
+    const isScheduled = parsedScheduledAt && parsedScheduledAt > new Date();
+
     const batch = await MediaBatch.create({
       userId: req.user._id,
       whatsappInstanceId,
@@ -421,6 +490,8 @@ const createMediaBatch = async (req, res) => {
       mediaItems,
       contactGroupIds,
       caption: caption || '', // ✅ SALVAR NO NÍVEL PRINCIPAL
+      status: isScheduled ? 'scheduled' : 'pending',
+      scheduledAt: isScheduled ? parsedScheduledAt : null,
       progress: {
         total: totalSends,
         sent: 0,
@@ -436,12 +507,15 @@ const createMediaBatch = async (req, res) => {
       mediaItemsCount: batch.mediaItems.length
     });
 
-    // ✅ INICIAR PROCESSAMENTO
-    processMediaBatch(batch._id);
+    if (isScheduled) {
+      scheduleMediaBatchProcessing(batch._id, parsedScheduledAt);
+    } else {
+      processMediaBatch(batch._id);
+    }
 
     res.status(201).json({
       success: true,
-      message: 'Lote de mídia criado e processamento iniciado',
+      message: isScheduled ? 'Lote de mídia criado e agendado com sucesso' : 'Lote de mídia criado e processamento iniciado',
       batch: {
         _id: batch._id,
         name: batch.name,
@@ -452,6 +526,7 @@ const createMediaBatch = async (req, res) => {
         totalSends: totalSends,
         caption: batch.caption, // ✅ INCLUIR NA RESPOSTA
         options: batch.options,
+        scheduledAt: batch.scheduledAt,
         createdAt: batch.createdAt
       },
       rateLimitInfo: {
@@ -566,6 +641,7 @@ const getMediaBatches = async (req, res) => {
         totalSends: batch.progress.total,
         sent: batch.progress.sent,
         failed: batch.progress.failed,
+        scheduledAt: batch.scheduledAt,
         createdAt: batch.createdAt
       })),
       pagination: {
@@ -612,6 +688,7 @@ const getMediaBatch = async (req, res) => {
         contactGroups: batch.contactGroupIds,
         results: batch.results,
         options: batch.options,
+        scheduledAt: batch.scheduledAt,
         createdAt: batch.createdAt
       }
     });
@@ -630,7 +707,7 @@ const cancelMediaBatch = async (req, res) => {
       {
         _id: req.params.id,
         userId: req.user._id,
-        status: { $in: ['pending', 'processing'] }
+        status: { $in: ['pending', 'scheduled', 'processing'] }
       },
       {
         status: 'cancelled',
@@ -654,6 +731,8 @@ const cancelMediaBatch = async (req, res) => {
         error: 'Lote não encontrado ou não pode ser cancelado'
       });
     }
+
+    clearScheduledBatch(batch._id);
 
     res.json({
       success: true,
@@ -687,6 +766,8 @@ const deleteMediaBatch = async (req, res) => {
         error: 'Lote de mídia não encontrado'
       });
     }
+
+    clearScheduledBatch(batch._id);
 
     // ✅ OPCIONAL: Limpar arquivos de mídia associados
     try {
