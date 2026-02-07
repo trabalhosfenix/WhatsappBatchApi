@@ -832,7 +832,10 @@ class WhatsAppManager {
             return;
         }
 
-        container.innerHTML = instances.map(instance => `
+        container.innerHTML = instances.map(instance => {
+            const hasQRCode = Boolean(instance.qrCodeReady || instance.qrCode);
+
+            return `
             <div class="list-item" data-instance-id="${instance._id}">
                 <div class="list-item-info">
                     <h4>${instance.sessionName}</h4>
@@ -846,9 +849,9 @@ class WhatsAppManager {
                     <small>Criado em: ${this.formatDate(instance.createdAt)}</small>
                 </div>
                 <div class="list-item-actions">
-                    ${instance.status === 'connecting' ? `
+                    ${hasQRCode ? `
                         <button class="btn btn-info" onclick="app.whatsappManager.showQRCode('${instance._id}')">
-                            <i class="fas fa-qrcode"></i> QR Code
+                            <i class="fas fa-link"></i> Conectar WhatsApp
                         </button>
                     ` : ''}
                     
@@ -872,7 +875,8 @@ class WhatsAppManager {
                     </button>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         this.emit('instancesRendered', instances);
     }
