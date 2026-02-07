@@ -33,6 +33,11 @@ class InstanceCleanup {
                 return true;
             }
 
+            // Instância em conexão/recuperação recente não deve ser limpa
+            if (instance.status === 'connecting' && minutesSinceActivity < 20) {
+                return true;
+            }
+
             // 4. Tentar ping na instância se possível
             if (this.whatsappService.isInstanceConnected) {
                 const isConnected = await this.whatsappService.isInstanceConnected(sessionName);
