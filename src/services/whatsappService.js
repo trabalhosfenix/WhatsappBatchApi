@@ -195,7 +195,7 @@ class WhatsAppService {
             this.sockets.set(sessionName, socket);
             this.authStates.set(sessionName, { state, saveCreds });
             this.reconnectionAttempts.set(sessionName, 0);
-            this.connectionStates.set(sessionName, 'connected');
+            this.connectionStates.set(sessionName, 'connecting');
 
 
             // socket.ev.on("messages.upsert", async ({ messages, type }) => {
@@ -256,16 +256,7 @@ class WhatsAppService {
                         if (connectionTimeout) clearTimeout(connectionTimeout);
 
                         const statusCode = lastDisconnect?.error?.output?.statusCode;
-                        const qrAttemptsEnded = statusCode === 408;
-                        const shouldReconnect =
-                            statusCode !== DisconnectReason.loggedOut && !qrAttemptsEnded;
-
-                        if (qrAttemptsEnded) {
-                            await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                                status: 'failed',
-                                qrCode: null
-                            });
-                        }
+                        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
                         console.log(`🔄 [${sessionName}] Should reconnect: ${shouldReconnect}`);
 
@@ -355,6 +346,8 @@ class WhatsAppService {
                             qrCode: qrCodeImage,
                             status: 'connecting'
                         });
+
+                        this.reconnectionAttempts.set(sessionName, 0);
 
                         console.log(`✅ [${sessionName}] QR Code salvo no banco`);
 
