@@ -1067,7 +1067,8 @@ class WhatsAppManager {
             const maxAttempts = 8;
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
-                    headers: this.auth.getAuthHeaders()
+                    headers: this.auth.getAuthHeaders(),
+                    cache: 'no-store'
                 });
 
                 const data = await response.json();
@@ -1141,12 +1142,21 @@ class WhatsAppManager {
                 this.state.qrCodeCheck.attempts++;
 
                 const response = await fetch(`/api/whatsapp/instances/${instanceId}`, {
-                    headers: this.auth.getAuthHeaders()
+                    headers: this.auth.getAuthHeaders(),
+                    cache: 'no-store'
                 });
 
                 const data = await response.json();
 
                 if (data.success && data.instance) {
+                    if (data.instance.qrCode) {
+                        const qrImage = document.getElementById('qrcodeImage');
+                        if (qrImage && qrImage.src !== data.instance.qrCode) {
+                            qrImage.src = data.instance.qrCode;
+                            this.emit('qrcodeRefreshed', { instanceId });
+                        }
+                    }
+
                     if (data.instance.status === 'connected') {
                         this.auth.showNotification('WhatsApp conectado com sucesso!', 'success');
                         this.closeQRCodeModal();

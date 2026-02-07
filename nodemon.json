@@ -1,0 +1,10 @@
+{
+  "watch": ["server.js", "src", "public"],
+  "ext": "js,json",
+  "ignore": [
+    "auth_sessions/**",
+    "uploads/**",
+    "coverage/**",
+    "*.log"
+  ]
+}
