@@ -835,6 +835,8 @@ class WhatsAppManager {
         container.innerHTML = instances.map(instance => {
             const hasQRCode = Boolean(instance.qrCodeReady || instance.qrCode);
             const canRecover = Boolean(instance.canAttemptRecovery || instance.sessionPersisted) && instance.status !== 'connected';
+            const isRecovering = Boolean(instance.reconnecting);
+            const shouldPrioritizeRecover = instance.recoveryPriority === 'recover_session' && canRecover;
 
             return `
             <div class="list-item" data-instance-id="${instance._id}">
@@ -847,18 +849,25 @@ class WhatsAppManager {
                         </span>
                     </p>
                     <p>Número: ${instance.phoneNumber || 'Não conectado'}</p>
+                    <small>Socket: ${instance.socketState || 'desconhecido'}${isRecovering ? ' (reconectando...)' : ''}</small><br>
                     <small>Criado em: ${this.formatDate(instance.createdAt)}</small>
                 </div>
                 <div class="list-item-actions">
-                    ${hasQRCode ? `
+                    ${shouldPrioritizeRecover ? `
+                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')" ${isRecovering ? 'disabled' : ''}>
+                            <i class="fas fa-rotate"></i> ${isRecovering ? 'Recuperando...' : 'Recuperar Sessão'}
+                        </button>
+                    ` : ''}
+
+                    ${hasQRCode && !shouldPrioritizeRecover ? `
                         <button class="btn btn-info" onclick="app.whatsappManager.showQRCode('${instance._id}')">
                             <i class="fas fa-link"></i> Conectar WhatsApp
                         </button>
                     ` : ''}
 
-                    ${!hasQRCode && canRecover ? `
-                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')">
-                            <i class="fas fa-rotate"></i> Recuperar Sessão
+                    ${!hasQRCode && canRecover && !shouldPrioritizeRecover ? `
+                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')" ${isRecovering ? 'disabled' : ''}>
+                            <i class="fas fa-rotate"></i> ${isRecovering ? 'Recuperando...' : 'Recuperar Sessão'}
                         </button>
                     ` : ''}
                     

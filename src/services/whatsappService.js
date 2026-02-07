@@ -39,6 +39,25 @@ class WhatsAppService {
         this.initializingInstances = new Set();
         this.reconnectionTimers = new Map();
         this.connectionStates = new Map(); // Novo: controle de estado
+        this.sessionLocks = new Map();
+    }
+
+    async withSessionLock(sessionName, operation) {
+        const activeLock = this.sessionLocks.get(sessionName);
+        if (activeLock) {
+            return activeLock;
+        }
+
+        const lockPromise = (async () => {
+            try {
+                return await operation();
+            } finally {
+                this.sessionLocks.delete(sessionName);
+            }
+        })();
+
+        this.sessionLocks.set(sessionName, lockPromise);
+        return lockPromise;
     }
 
     listActiveInstances() {
@@ -417,6 +436,7 @@ class WhatsAppService {
                 this.sockets.delete(sessionName);
                 this.authStates.delete(sessionName);
                 this.reconnectionAttempts.delete(sessionName);
+                this.connectionStates.set(sessionName, 'disconnected');
             }
 
             // Atualizar banco
@@ -952,6 +972,9 @@ class WhatsAppService {
             this.sockets.clear();
             this.authStates.clear();
             this.reconnectionAttempts.clear();
+            this.connectionStates.clear();
+            this.initializingInstances.clear();
+            this.sessionLocks.clear();
 
             console.log('✅ [WhatsAppService] Todas as instâncias limpas');
 
@@ -962,64 +985,57 @@ class WhatsAppService {
     // services/whatsappService.js - ADICIONE ESTA FUNÇÃO:
 
     async reconnectInstance(sessionName, userId) {
-        try {
-            console.log(`🔄 [WhatsAppService] Tentando reconectar: ${sessionName}`);
+        return this.withSessionLock(sessionName, async () => {
+            try {
+                console.log(`🔄 [WhatsAppService] Tentando reconectar: ${sessionName}`);
 
-            // Evitar reinicialização em cascata durante polling de QR
-            if (this.initializingInstances.has(sessionName)) {
-                console.log(`⚠️ [${sessionName}] Inicialização em andamento, pulando nova reconexão`);
-                return true;
-            }
-
-            const currentState = this.connectionStates.get(sessionName);
-            const existingSocket = this.sockets.get(sessionName);
-            if (existingSocket && (currentState === 'connecting' || currentState === 'connected')) {
-                console.log(`ℹ️ [${sessionName}] Socket já ativo (${currentState}), mantendo conexão atual`);
-                return true;
-            }
-
-            // Buscar instância no banco
-            const instance = await WhatsAppInstance.findOne({
-                sessionName,
-                userId
-            });
-
-            if (!instance) {
-                throw new Error('Instância não encontrada no banco');
-            }
-
-            // Limpar socket existente apenas quando realmente necessário
-            if (existingSocket) {
-                try {
-                    await existingSocket.end();
-                } catch (endError) {
-                    console.warn(`⚠️ [${sessionName}] Erro ao encerrar socket antigo: ${endError.message}`);
+                if (this.initializingInstances.has(sessionName)) {
+                    console.log(`⚠️ [${sessionName}] Inicialização em andamento, pulando nova reconexão`);
+                    return true;
                 }
-                this.sockets.delete(sessionName);
+
+                const currentState = this.connectionStates.get(sessionName);
+                const existingSocket = this.sockets.get(sessionName);
+                if (existingSocket && (currentState === 'connecting' || currentState === 'connected')) {
+                    console.log(`ℹ️ [${sessionName}] Socket já ativo (${currentState}), mantendo conexão atual`);
+                    return true;
+                }
+
+                const instance = await WhatsAppInstance.findOne({
+                    sessionName,
+                    userId
+                });
+
+                if (!instance) {
+                    throw new Error('Instância não encontrada no banco');
+                }
+
+                await WhatsAppInstance.findByIdAndUpdate(instance._id, {
+                    status: 'connecting',
+                    qrCode: null
+                });
+                this.connectionStates.set(sessionName, 'connecting');
+
+                if (existingSocket) {
+                    try {
+                        await existingSocket.end();
+                    } catch (endError) {
+                        console.warn(`⚠️ [${sessionName}] Erro ao encerrar socket antigo: ${endError.message}`);
+                    }
+                    this.sockets.delete(sessionName);
+                }
+
+                await this.initializeClient(sessionName, userId, instance._id);
+
+                console.log(`✅ [WhatsAppService] Reconexão iniciada para: ${sessionName}`);
+                return true;
+
+            } catch (error) {
+                console.error(`❌ [WhatsAppService] Erro na reconexão:`, error);
+                this.connectionStates.set(sessionName, 'failed');
+                throw error;
             }
-
-            // Recriar a instância
-            await this.initializeClient(sessionName, userId, instance._id);
-
-            console.log(`✅ [WhatsAppService] Reconexão iniciada para: ${sessionName}`);
-            return true;
-
-        } catch (error) {
-            console.error(`❌ [WhatsAppService] Erro na reconexão:`, error);
-            throw error;
-        }
-    }
-
-
-    async disconnectClient(sessionName) {
-        try {
-            console.log(`🔌 [WhatsAppService] Desconectando: ${sessionName}`);
-            await this.cleanupInstance(sessionName, null, 'disconnected');
-            console.log(`✅ [WhatsAppService] Desconectado: ${sessionName}`);
-        } catch (error) {
-            console.error(`❌ [WhatsAppService] Erro ao desconectar:`, error);
-            throw error;
-        }
+        });
     }
 
     // Reconexão segura
@@ -1057,12 +1073,15 @@ class WhatsAppService {
     async getSocketStatus(sessionName) {
         const socket = this.sockets.get(sessionName);
         const connectionState = this.connectionStates.get(sessionName);
+        const reconnectAttempts = this.reconnectionAttempts.get(sessionName) || 0;
 
         return {
             connected: connectionState === 'connected',
             connectionState: connectionState,
             hasSocket: !!socket,
-            hasUser: !!(socket && socket.user)
+            hasUser: !!(socket && socket.user),
+            reconnectAttempts,
+            reconnecting: this.sessionLocks.has(sessionName) || this.initializingInstances.has(sessionName)
         };
     }
 
