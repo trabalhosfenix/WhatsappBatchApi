@@ -1,0 +1,71 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: whatsapp-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: whatsapp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+  api:
+    image: node:20-alpine
+    container_name: whatsapp-api
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/whatsapp-batch-api
+      REDIS_URL: redis://redis:6379
+      WORKER_NODE_ID: api-node-1
+      WORKER_NODE_LIST: api-node-1,worker-node-1
+      QUEUE_FIRST_MODE: "true"
+      SHARED_SESSIONS_PATH: /shared-sessions
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./:/app
+      - shared_sessions:/shared-sessions
+
+  worker:
+    image: node:20-alpine
+    container_name: whatsapp-worker
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm install && npm run worker:whatsapp"
+    env_file:
+      - .env
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/whatsapp-batch-api
+      REDIS_URL: redis://redis:6379
+      IS_WHATSAPP_WORKER: "true"
+      WORKER_NODE_ID: worker-node-1
+      WORKER_NODE_LIST: api-node-1,worker-node-1
+      QUEUE_FIRST_MODE: "true"
+      SHARED_SESSIONS_PATH: /shared-sessions
+    depends_on:
+      - mongodb
+      - redis
+    volumes:
+      - ./:/app
+      - shared_sessions:/shared-sessions
+
+volumes:
+  mongo_data:
+  redis_data:
+  shared_sessions:

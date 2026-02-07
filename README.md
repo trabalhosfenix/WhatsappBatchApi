@@ -38,6 +38,30 @@ Foi adicionado um blueprint técnico com fases de implantação, contratos de fi
    ```
 
 
+
+## Redis no ambiente local
+
+### Opção 1: Docker (recomendado)
+```bash
+docker run -d --name whatsapp-redis -p 6379:6379 redis:7-alpine
+```
+
+### Opção 2: Docker Compose completo (API + Worker + Mongo + Redis)
+```bash
+docker compose up -d
+```
+
+Com isso, os serviços sobem com:
+- API em `http://localhost:3000`
+- MongoDB em `localhost:27017`
+- Redis em `localhost:6379`
+
+Para validar Redis:
+```bash
+docker exec -it whatsapp-redis redis-cli ping
+```
+Resposta esperada: `PONG`.
+
 ## Worker de comandos WhatsApp (Fase 2 inicial)
 
 Quando `REDIS_URL` estiver configurada, os comandos de `connect/recover/disconnect` podem ser enfileirados em `whatsapp.commands` e consumidos por um processo dedicado:
