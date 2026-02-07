@@ -272,7 +272,7 @@ class Auth {
 
         setTimeout(() => {
             notification.style.display = 'none';
-        }, 3000);
+        }, 5000);
     }
 
     showLoading() {
@@ -832,7 +832,13 @@ class WhatsAppManager {
             return;
         }
 
-        container.innerHTML = instances.map(instance => `
+        container.innerHTML = instances.map(instance => {
+            const hasQRCode = Boolean(instance.qrCodeReady || instance.qrCode);
+            const canRecover = Boolean(instance.canAttemptRecovery || instance.sessionPersisted) && instance.status !== 'connected';
+            const isRecovering = Boolean(instance.reconnecting);
+            const shouldPrioritizeRecover = instance.recoveryPriority === 'recover_session' && canRecover;
+
+            return `
             <div class="list-item" data-instance-id="${instance._id}">
                 <div class="list-item-info">
                     <h4>${instance.sessionName}</h4>
@@ -843,12 +849,25 @@ class WhatsAppManager {
                         </span>
                     </p>
                     <p>Número: ${instance.phoneNumber || 'Não conectado'}</p>
+                    <small>Socket: ${instance.socketState || 'desconhecido'}${isRecovering ? ' (reconectando...)' : ''}</small><br>
                     <small>Criado em: ${this.formatDate(instance.createdAt)}</small>
                 </div>
                 <div class="list-item-actions">
-                    ${instance.status === 'connecting' ? `
+                    ${shouldPrioritizeRecover ? `
+                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')" ${isRecovering ? 'disabled' : ''}>
+                            <i class="fas fa-rotate"></i> ${isRecovering ? 'Recuperando...' : 'Recuperar Sessão'}
+                        </button>
+                    ` : ''}
+
+                    ${instance.status !== 'connected' && !shouldPrioritizeRecover ? `
                         <button class="btn btn-info" onclick="app.whatsappManager.showQRCode('${instance._id}')">
-                            <i class="fas fa-qrcode"></i> QR Code
+                            <i class="fas fa-link"></i> ${hasQRCode ? 'Conectar WhatsApp' : 'Gerar novo QR'}
+                        </button>
+                    ` : ''}
+
+                    ${!hasQRCode && canRecover && !shouldPrioritizeRecover ? `
+                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')" ${isRecovering ? 'disabled' : ''}>
+                            <i class="fas fa-rotate"></i> ${isRecovering ? 'Recuperando...' : 'Recuperar Sessão'}
                         </button>
                     ` : ''}
                     
@@ -872,7 +891,8 @@ class WhatsAppManager {
                     </button>
                 </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         this.emit('instancesRendered', instances);
     }
@@ -1052,29 +1072,42 @@ class WhatsAppManager {
             if (!this.auth) return;
 
             this.auth.showLoading();
-            const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
-                headers: this.auth.getAuthHeaders()
-            });
 
-            const data = await response.json();
+            const maxAttempts = 8;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
+                    headers: this.auth.getAuthHeaders(),
+                    cache: 'no-store'
+                });
 
-            if (data.success && data.qrCode) {
-                this.openQRCodeModal(instanceId, data.qrCode);
-                this.emit('qrcodeShown', { instanceId, qrCode: data.qrCode });
-            } else {
+                const data = await response.json();
+
+                if (data.success && data.qrCode) {
+                    this.openQRCodeModal(instanceId, data.qrCode);
+                    this.emit('qrcodeShown', { instanceId, qrCode: data.qrCode });
+                    return;
+                }
+
+                if (data.success && data.status === 'connected') {
+                    this.auth.showNotification('Instância já está conectada!', 'success');
+                    this.loadInstances(true);
+                    return;
+                }
+
+                if (data.success && data.pending) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    continue;
+                }
+
                 throw new Error(data.error || 'QR Code não disponível');
             }
+
+            throw new Error('QR Code ainda não foi gerado. Tente novamente em alguns segundos.');
+
         } catch (error) {
             console.error('Erro ao buscar QR Code:', error);
             this.emit('error', error);
-
-            // ✅ CORREÇÃO: Mensagem mais específica
-            if (error.message.includes('já estar conectada')) {
-                this.auth.showNotification('Instância já está conectada!', 'info');
-                this.loadInstances(true); // Recarregar status
-            } else {
-                this.auth.showNotification(error.message, 'error');
-            }
+            this.auth.showNotification(error.message, 'error');
         } finally {
             this.auth.hideLoading();
         }
@@ -1118,12 +1151,21 @@ class WhatsAppManager {
                 this.state.qrCodeCheck.attempts++;
 
                 const response = await fetch(`/api/whatsapp/instances/${instanceId}`, {
-                    headers: this.auth.getAuthHeaders()
+                    headers: this.auth.getAuthHeaders(),
+                    cache: 'no-store'
                 });
 
                 const data = await response.json();
 
                 if (data.success && data.instance) {
+                    if (data.instance.qrCode) {
+                        const qrImage = document.getElementById('qrcodeImage');
+                        if (qrImage && qrImage.src !== data.instance.qrCode) {
+                            qrImage.src = data.instance.qrCode;
+                            this.emit('qrcodeRefreshed', { instanceId });
+                        }
+                    }
+
                     if (data.instance.status === 'connected') {
                         this.auth.showNotification('WhatsApp conectado com sucesso!', 'success');
                         this.closeQRCodeModal();
@@ -1138,6 +1180,9 @@ class WhatsAppManager {
                         this.auth.showNotification('Falha ao conectar WhatsApp', 'error');
                         this.closeQRCodeModal();
                         this.emit('connectionFailed', data.instance);
+                    } else if (data.instance.status === 'disconnected' && !data.instance.qrCodeReady) {
+                        this.stopQRCodeCheck();
+                        this.auth.showNotification('Sessão desconectada. Tente recuperar sessão ou gerar novo QR.', 'warning');
                     }
                 }
 
@@ -1152,7 +1197,7 @@ class WhatsAppManager {
                 console.error('Erro ao verificar status:', error);
                 this.emit('error', error);
             }
-        }, 3000);
+        }, 5000);
     }
 
     stopQRCodeCheck() {
@@ -1260,6 +1305,34 @@ class WhatsAppManager {
     }
 
     // No arquivo app.js - WhatsAppManager class
+
+
+    async recoverInstanceSession(instanceId) {
+        if (!this.auth) return;
+
+        try {
+            this.auth.showLoading();
+            const response = await fetch(`/api/whatsapp/instances/${instanceId}/recover`, {
+                method: 'POST',
+                headers: this.auth.getAuthHeaders()
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.auth.showNotification(data.message || 'Recuperação de sessão iniciada', 'success');
+                this.state.cache.instances = null;
+                this.state.cache.lastUpdated = null;
+                this.loadInstances(true);
+            } else {
+                throw new Error(data.error || 'Não foi possível recuperar a sessão');
+            }
+        } catch (error) {
+            this.auth.showNotification(error.message, 'error');
+        } finally {
+            this.auth.hideLoading();
+        }
+    }
 
     async disconnectInstance(instanceId) {
         if (!confirm('Tem certeza que deseja desconectar esta instância?') || !this.auth) {

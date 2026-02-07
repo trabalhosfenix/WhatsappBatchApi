@@ -2,9 +2,26 @@ const ContactGroup = require('../models/ContactGroup');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const whatsappBaileysService = require('../services/whatsappService');
 const messageControlService = require('../services/messageControlService');
+const fs = require('fs');
+const path = require('path');
 
 
 console.log('✅ WhatsAppController carregado - VERSÃO CORRIGIDA');
+
+
+const hasSavedSession = (sessionName) => {
+  try {
+    const sessionDir = path.join(__dirname, '..', 'auth_sessions', sessionName);
+    if (!fs.existsSync(sessionDir)) return false;
+
+    const entries = fs.readdirSync(sessionDir);
+    return entries.length > 0;
+  } catch (error) {
+    console.warn(`⚠️ Não foi possível validar sessão salva para ${sessionName}:`, error.message);
+    return false;
+  }
+};
+
 
 exports.createInstance = async (req, res) => {
   console.log('📍 POST /api/whatsapp/instances chamado');
@@ -111,18 +128,33 @@ exports.getInstances = async (req, res) => {
     console.log(`📊 Encontradas ${instances.length} instâncias`);
 
     
-    res.json({
-      success: true,
-      instances: instances.map(instance => ({
+    const enrichedInstances = await Promise.all(instances.map(async (instance) => {
+      const socketStatus = await whatsappBaileysService.getSocketStatus(instance.sessionName);
+      const sessionPersisted = hasSavedSession(instance.sessionName);
+      const canAttemptRecovery = sessionPersisted && instance.status !== 'connected';
+
+      return {
         _id: instance._id,
         sessionName: instance.sessionName,
         status: instance.status,
         qrCode: instance.qrCode,
+        qrCodeReady: Boolean(instance.qrCode),
+        sessionPersisted,
+        canAttemptRecovery,
+        recoveryPriority: canAttemptRecovery ? 'recover_session' : 'read_qr',
+        socketState: socketStatus.connectionState || 'unknown',
+        reconnecting: socketStatus.reconnecting,
+        reconnectAttempts: socketStatus.reconnectAttempts,
         phoneNumber: instance.phoneNumber,
         lastConnection: instance.lastConnection,
         createdAt: instance.createdAt,
         updatedAt: instance.updatedAt
-      }))
+      };
+    }));
+
+    res.json({
+      success: true,
+      instances: enrichedInstances
     });
 
 
@@ -162,6 +194,9 @@ exports.getInstance = async (req, res) => {
         sessionName: instance.sessionName,
         status: instance.status,
         qrCode: instance.qrCode,
+        qrCodeReady: Boolean(instance.qrCode),
+        sessionPersisted: hasSavedSession(instance.sessionName),
+        canAttemptRecovery: hasSavedSession(instance.sessionName) && instance.status !== 'connected',
         phoneNumber: instance.phoneNumber,
         lastConnection: instance.lastConnection,
         createdAt: instance.createdAt,
@@ -194,15 +229,35 @@ exports.getQRCode = async (req, res) => {
     }
 
     if (!instance.qrCode) {
-      return res.status(400).json({
-        success: false,
-        error: 'QR Code não disponível. A instância pode já estar conectada.'
+      if (instance.status !== 'connected') {
+        try {
+          const socketStatus = await whatsappBaileysService.getSocketStatus(instance.sessionName);
+          const shouldReconnect = !socketStatus.hasSocket || ['disconnected', 'failed'].includes(socketStatus.connectionState);
+
+          if (shouldReconnect) {
+            await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
+          }
+        } catch (reconnectError) {
+          console.warn(`⚠️ Não foi possível iniciar reconexão para gerar QR: ${reconnectError.message}`);
+        }
+      }
+
+      return res.json({
+        success: true,
+        pending: true,
+        qrCode: null,
+        qrCodeReady: false,
+        status: instance.status,
+        message: 'QR Code ainda não disponível. Tentando gerar em tempo real...'
       });
     }
 
     res.json({
       success: true,
+      pending: false,
       qrCode: instance.qrCode,
+      qrCodeReady: Boolean(instance.qrCode),
+      status: instance.status,
       message: 'QR Code gerado com sucesso'
     });
   } catch (error) {
@@ -355,8 +410,9 @@ exports.getInstanceStatus = async (req, res) => {
       });
     }
 
-    const hasSocket = !!whatsappBaileysService.sockets.get(instance.sessionName);
-    const socketStatus = hasSocket ? 'active' : 'inactive';
+    const socketStatus = await whatsappBaileysService.getSocketStatus(instance.sessionName);
+    const sessionPersisted = hasSavedSession(instance.sessionName);
+    const canAttemptRecovery = sessionPersisted && instance.status !== 'connected';
 
     res.json({
       success: true,
@@ -365,11 +421,92 @@ exports.getInstanceStatus = async (req, res) => {
         sessionName: instance.sessionName,
         status: instance.status,
         phoneNumber: instance.phoneNumber,
-        socketStatus: socketStatus,
-        hasSocket: hasSocket
+        qrCodeReady: Boolean(instance.qrCode),
+        sessionPersisted,
+        canAttemptRecovery,
+        recoveryPriority: canAttemptRecovery ? 'recover_session' : 'read_qr',
+        socketStatus: socketStatus.connectionState || 'inactive',
+        hasSocket: socketStatus.hasSocket,
+        reconnecting: socketStatus.reconnecting,
+        reconnectAttempts: socketStatus.reconnectAttempts
       }
     });
   } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+
+exports.recoverInstance = async (req, res) => {
+  try {
+    const instance = await WhatsAppInstance.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância não encontrada'
+      });
+    }
+
+    if (instance.status === 'connected') {
+      return res.json({
+        success: true,
+        message: 'Instância já está conectada',
+        instance: {
+          _id: instance._id,
+          sessionName: instance.sessionName,
+          status: instance.status,
+          sessionPersisted: hasSavedSession(instance.sessionName)
+        }
+      });
+    }
+
+    const sessionPersisted = hasSavedSession(instance.sessionName);
+    if (!sessionPersisted) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nenhuma sessão salva encontrada para recuperação. Gere um novo QR Code.'
+      });
+    }
+
+    const socketStatus = await whatsappBaileysService.getSocketStatus(instance.sessionName);
+    if (socketStatus.reconnecting) {
+      return res.json({
+        success: true,
+        message: 'Reconexão já está em andamento para esta instância.',
+        instance: {
+          _id: instance._id,
+          sessionName: instance.sessionName,
+          status: 'connecting',
+          sessionPersisted: true,
+          canAttemptRecovery: true,
+          reconnecting: true,
+          reconnectAttempts: socketStatus.reconnectAttempts
+        }
+      });
+    }
+
+    await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
+
+    res.json({
+      success: true,
+      message: 'Recuperação de sessão iniciada. Aguarde alguns segundos e atualize o status.',
+      instance: {
+        _id: instance._id,
+        sessionName: instance.sessionName,
+        status: 'connecting',
+        sessionPersisted: true,
+        canAttemptRecovery: true
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erro ao recuperar sessão:', error);
     res.status(400).json({
       success: false,
       error: error.message
