@@ -2,6 +2,13 @@
 
 API Node.js/Express para autenticação, gerenciamento de instâncias WhatsApp, grupos de contato, lotes de mensagens e lotes de mídia.
 
+## Arquitetura alvo (cluster/worker)
+
+Foi adicionado um blueprint técnico com fases de implantação, contratos de fila, sharding e estratégia de failover em:
+
+- `docs/whatsapp-worker-blueprint.md`
+
+
 ## Requisitos
 - Node.js 18+
 - MongoDB
@@ -18,6 +25,8 @@ API Node.js/Express para autenticação, gerenciamento de instâncias WhatsApp, 
    JWT_SECRET=sua_chave_jwt
    CORS_ORIGIN=http://localhost:3000
    NODE_ENV=development
+   REDIS_URL=redis://localhost:6379
+   WORKER_NODE_ID=api-node-1
    ```
 3. Rode a API:
    ```bash

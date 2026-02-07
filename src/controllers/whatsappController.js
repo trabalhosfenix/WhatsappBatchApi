@@ -67,9 +67,18 @@ exports.createInstance = async (req, res) => {
 
   } catch (error) {
     console.error('❌ [Baileys] Erro:', error);
-    res.status(400).json({
+
+    const isUserInstanceConflict = error.message?.includes('Usuário já possui instância ativa');
+    const isDuplicateKey = error.code === 11000;
+
+    const statusCode = isUserInstanceConflict || isDuplicateKey ? 409 : 400;
+    const errorMessage = isDuplicateKey
+      ? 'Usuário já possui uma instância cadastrada. Remova a existente antes de criar outra.'
+      : error.message;
+
+    res.status(statusCode).json({
       success: false,
-      error: error.message
+      error: errorMessage
     });
   }
 };
