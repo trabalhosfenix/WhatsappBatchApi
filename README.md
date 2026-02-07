@@ -28,6 +28,11 @@ API Node.js/Express para autenticação, gerenciamento de instâncias WhatsApp, 
 - Local: `http://localhost:3000`
 - Health check: `GET /health`
 
+
+## Nota de produto
+- A funcionalidade **Agenda de contatos foi descontinuada** no fluxo principal.
+- O agendamento de disparo agora deve ser feito diretamente na criação de **Lotes de mídia** usando o campo `scheduledAt` (ISO 8601) ou o campo de data/hora no frontend.
+
 ## Autenticação
 A maior parte das rotas usa token JWT no header `Authorization`:
 
@@ -133,7 +138,7 @@ Público:
 Autenticado:
 - `GET /media-file/:userId/:filename`
 - `POST /upload`
-- `POST /batches`
+- `POST /batches` (aceita `scheduledAt` opcional para envio agendado)
 - `GET /batches`
 - `GET /batches/:id`
 - `PUT /batches/:id/cancel`
@@ -167,3 +172,20 @@ Exemplo comum de erro:
 - `npm run dev` — desenvolvimento com nodemon
 - `npm start` — produção
 - `npm test` — Jest
+
+
+**Exemplo – Criar lote de mídia agendado**
+```bash
+curl -X POST http://localhost:3000/api/media/batches \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":"Campanha fim de semana",
+    "whatsappInstanceId":"66b...",
+    "contactGroupIds":["66c..."],
+    "mediaItems":[{"fileName":"banner.jpg","mimeType":"image/jpeg"}],
+    "caption":"Promoção válida hoje",
+    "scheduledAt":"2026-02-08T14:00:00.000Z",
+    "options":{"delayBetweenMessages":3000}
+  }'
+```

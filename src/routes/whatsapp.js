@@ -17,6 +17,7 @@ router.delete('/instances/:sessionName', whatsappController.deleteInstance);
 // QR Code e conexão
 router.get('/instances/:id/qrcode', whatsappController.getQRCode);
 router.put('/instances/:id/disconnect', whatsappController.disconnectInstance);
+router.post('/instances/:id/recover', whatsappController.recoverInstance);
 
 // Grupos
 router.post('/instances/:id/load-groups', whatsappController.loadGroups);
