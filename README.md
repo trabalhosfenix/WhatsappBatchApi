@@ -62,6 +62,14 @@ docker exec -it whatsapp-redis redis-cli ping
 ```
 Resposta esperada: `PONG`.
 
+### Troubleshooting: sessão não conecta no Docker
+Se a API enfileira comandos para um `ownerNode` que não tem consumer ativo, a sessão fica pendente.
+No `docker-compose.yml` deste projeto, o `WORKER_NODE_LIST` já está fixado para `worker-node-1` em API/worker, garantindo que os jobs vão para a fila consumida pelo worker (`whatsapp.commands.worker-node-1`).
+
+Se você customizar nós, mantenha esta regra:
+- todo nó listado em `WORKER_NODE_LIST` precisa ter um worker rodando e consumindo sua fila
+- se houver só 1 worker, use exatamente esse nó na lista
+
 ## Worker de comandos WhatsApp (Fase 2 inicial)
 
 Quando `REDIS_URL` estiver configurada, os comandos de `connect/recover/disconnect` podem ser enfileirados em `whatsapp.commands` e consumidos por um processo dedicado:

@@ -30,7 +30,7 @@ services:
       MONGODB_URI: mongodb://mongodb:27017/whatsapp-batch-api
       REDIS_URL: redis://redis:6379
       WORKER_NODE_ID: api-node-1
-      WORKER_NODE_LIST: api-node-1,worker-node-1
+      WORKER_NODE_LIST: worker-node-1
       QUEUE_FIRST_MODE: "true"
       SHARED_SESSIONS_PATH: /shared-sessions
     ports:
@@ -55,7 +55,7 @@ services:
       REDIS_URL: redis://redis:6379
       IS_WHATSAPP_WORKER: "true"
       WORKER_NODE_ID: worker-node-1
-      WORKER_NODE_LIST: api-node-1,worker-node-1
+      WORKER_NODE_LIST: worker-node-1
       QUEUE_FIRST_MODE: "true"
       SHARED_SESSIONS_PATH: /shared-sessions
     depends_on:
