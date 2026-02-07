@@ -86,7 +86,7 @@ class MediaBatchesManager {
 
     async updateBatchesProgress() {
         try {
-            // const response = await this.safeApiRequest('GET', `/api/media/batches?page=${this.currentPage}&limit=10`);
+            const response = await this.safeApiRequest('GET', `/api/media/batches?page=${this.currentPage}&limit=10`);
 
             if (response.success && response.batches?.length > 0) {
                 this.updateBatchCardsProgress(response.batches);
@@ -103,7 +103,7 @@ class MediaBatchesManager {
 
             const progressFill = card.querySelector('.progress-fill');
             const progressText = card.querySelector('.batch-progress span');
-            const sentCount = card.querySelector('.info-item:nth-child(3) span');
+            const sentCount = card.querySelector('.batch-sent-count');
             const progressPercent = this.calculateProgress(batch);
 
             // Atualizar barra de progresso
@@ -1342,7 +1342,7 @@ class MediaBatchesManager {
                             </div>
                             <div class="info-item">
                                 <i class="fas fa-paper-plane"></i>
-                                <span>${batch.sent || 0}/${batch.totalSends || 0} enviados</span>
+                                <span class="batch-sent-count">${batch.sent || 0}/${batch.totalSends || 0} enviados</span>
                             </div>
                             ${batch.scheduledAt ? `
                             <div class="info-item">
@@ -1397,9 +1397,11 @@ class MediaBatchesManager {
 
         const total = batch.totalSends || 0;
         const sent = batch.sent || 0;
+        const failed = batch.failed || 0;
+        const processed = sent + failed;
 
         if (total === 0) return 0;
-        return Math.min(Math.round((sent / total) * 100), 100);
+        return Math.min(Math.round((processed / total) * 100), 100);
     }
 
     async cancelBatch(batchId) {
