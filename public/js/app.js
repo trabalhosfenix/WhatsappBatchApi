@@ -272,7 +272,7 @@ class Auth {
 
         setTimeout(() => {
             notification.style.display = 'none';
-        }, 3000);
+        }, 5000);
     }
 
     showLoading() {
@@ -1063,29 +1063,41 @@ class WhatsAppManager {
             if (!this.auth) return;
 
             this.auth.showLoading();
-            const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
-                headers: this.auth.getAuthHeaders()
-            });
 
-            const data = await response.json();
+            const maxAttempts = 8;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
+                    headers: this.auth.getAuthHeaders()
+                });
 
-            if (data.success && data.qrCode) {
-                this.openQRCodeModal(instanceId, data.qrCode);
-                this.emit('qrcodeShown', { instanceId, qrCode: data.qrCode });
-            } else {
+                const data = await response.json();
+
+                if (data.success && data.qrCode) {
+                    this.openQRCodeModal(instanceId, data.qrCode);
+                    this.emit('qrcodeShown', { instanceId, qrCode: data.qrCode });
+                    return;
+                }
+
+                if (data.success && data.status === 'connected') {
+                    this.auth.showNotification('Instância já está conectada!', 'success');
+                    this.loadInstances(true);
+                    return;
+                }
+
+                if (data.success && data.pending) {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    continue;
+                }
+
                 throw new Error(data.error || 'QR Code não disponível');
             }
+
+            throw new Error('QR Code ainda não foi gerado. Tente novamente em alguns segundos.');
+
         } catch (error) {
             console.error('Erro ao buscar QR Code:', error);
             this.emit('error', error);
-
-            // ✅ CORREÇÃO: Mensagem mais específica
-            if (error.message.includes('já estar conectada')) {
-                this.auth.showNotification('Instância já está conectada!', 'info');
-                this.loadInstances(true); // Recarregar status
-            } else {
-                this.auth.showNotification(error.message, 'error');
-            }
+            this.auth.showNotification(error.message, 'error');
         } finally {
             this.auth.hideLoading();
         }
@@ -1149,6 +1161,9 @@ class WhatsAppManager {
                         this.auth.showNotification('Falha ao conectar WhatsApp', 'error');
                         this.closeQRCodeModal();
                         this.emit('connectionFailed', data.instance);
+                    } else if (data.instance.status === 'disconnected' && !data.instance.qrCodeReady) {
+                        this.stopQRCodeCheck();
+                        this.auth.showNotification('Sessão desconectada. Tente recuperar sessão ou gerar novo QR.', 'warning');
                     }
                 }
 
@@ -1163,7 +1178,7 @@ class WhatsAppManager {
                 console.error('Erro ao verificar status:', error);
                 this.emit('error', error);
             }
-        }, 3000);
+        }, 5000);
     }
 
     stopQRCodeCheck() {

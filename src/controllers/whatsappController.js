@@ -217,14 +217,32 @@ exports.getQRCode = async (req, res) => {
     }
 
     if (!instance.qrCode) {
-      return res.status(400).json({
-        success: false,
-        error: 'QR Code não disponível. A instância pode já estar conectada.'
+      if (instance.status !== 'connected') {
+        try {
+          const socketStatus = await whatsappBaileysService.getSocketStatus(instance.sessionName);
+          const shouldReconnect = !socketStatus.hasSocket || ['disconnected', 'failed'].includes(socketStatus.connectionState);
+
+          if (shouldReconnect) {
+            await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
+          }
+        } catch (reconnectError) {
+          console.warn(`⚠️ Não foi possível iniciar reconexão para gerar QR: ${reconnectError.message}`);
+        }
+      }
+
+      return res.json({
+        success: true,
+        pending: true,
+        qrCode: null,
+        qrCodeReady: false,
+        status: instance.status,
+        message: 'QR Code ainda não disponível. Tentando gerar em tempo real...'
       });
     }
 
     res.json({
       success: true,
+      pending: false,
       qrCode: instance.qrCode,
       qrCodeReady: Boolean(instance.qrCode),
       status: instance.status,
