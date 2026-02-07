@@ -835,6 +835,8 @@ class WhatsAppManager {
         container.innerHTML = instances.map(instance => {
             const hasQRCode = Boolean(instance.qrCodeReady || instance.qrCode);
             const canRecover = Boolean(instance.canAttemptRecovery || instance.sessionPersisted) && instance.status !== 'connected';
+            const isRecovering = Boolean(instance.reconnecting);
+            const shouldPrioritizeRecover = instance.recoveryPriority === 'recover_session' && canRecover;
 
             return `
             <div class="list-item" data-instance-id="${instance._id}">
@@ -847,18 +849,25 @@ class WhatsAppManager {
                         </span>
                     </p>
                     <p>Número: ${instance.phoneNumber || 'Não conectado'}</p>
+                    <small>Socket: ${instance.socketState || 'desconhecido'}${isRecovering ? ' (reconectando...)' : ''}</small><br>
                     <small>Criado em: ${this.formatDate(instance.createdAt)}</small>
                 </div>
                 <div class="list-item-actions">
-                    ${hasQRCode ? `
-                        <button class="btn btn-info" onclick="app.whatsappManager.showQRCode('${instance._id}')">
-                            <i class="fas fa-link"></i> Conectar WhatsApp
+                    ${shouldPrioritizeRecover ? `
+                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')" ${isRecovering ? 'disabled' : ''}>
+                            <i class="fas fa-rotate"></i> ${isRecovering ? 'Recuperando...' : 'Recuperar Sessão'}
                         </button>
                     ` : ''}
 
-                    ${!hasQRCode && canRecover ? `
-                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')">
-                            <i class="fas fa-rotate"></i> Recuperar Sessão
+                    ${instance.status !== 'connected' && !shouldPrioritizeRecover ? `
+                        <button class="btn btn-info" onclick="app.whatsappManager.showQRCode('${instance._id}')">
+                            <i class="fas fa-link"></i> ${hasQRCode ? 'Conectar WhatsApp' : 'Gerar novo QR'}
+                        </button>
+                    ` : ''}
+
+                    ${!hasQRCode && canRecover && !shouldPrioritizeRecover ? `
+                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')" ${isRecovering ? 'disabled' : ''}>
+                            <i class="fas fa-rotate"></i> ${isRecovering ? 'Recuperando...' : 'Recuperar Sessão'}
                         </button>
                     ` : ''}
                     
@@ -1067,7 +1076,8 @@ class WhatsAppManager {
             const maxAttempts = 8;
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 const response = await fetch(`/api/whatsapp/instances/${instanceId}/qrcode`, {
-                    headers: this.auth.getAuthHeaders()
+                    headers: this.auth.getAuthHeaders(),
+                    cache: 'no-store'
                 });
 
                 const data = await response.json();
@@ -1141,12 +1151,21 @@ class WhatsAppManager {
                 this.state.qrCodeCheck.attempts++;
 
                 const response = await fetch(`/api/whatsapp/instances/${instanceId}`, {
-                    headers: this.auth.getAuthHeaders()
+                    headers: this.auth.getAuthHeaders(),
+                    cache: 'no-store'
                 });
 
                 const data = await response.json();
 
                 if (data.success && data.instance) {
+                    if (data.instance.qrCode) {
+                        const qrImage = document.getElementById('qrcodeImage');
+                        if (qrImage && qrImage.src !== data.instance.qrCode) {
+                            qrImage.src = data.instance.qrCode;
+                            this.emit('qrcodeRefreshed', { instanceId });
+                        }
+                    }
+
                     if (data.instance.status === 'connected') {
                         this.auth.showNotification('WhatsApp conectado com sucesso!', 'success');
                         this.closeQRCodeModal();
