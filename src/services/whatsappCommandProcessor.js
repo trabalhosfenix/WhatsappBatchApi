@@ -128,7 +128,7 @@ class WhatsAppCommandProcessor {
       return;
     }
 
-    this.queue.process(2, async (job) => {
+    const processCommandJob = async (job) => {
       const { sessionName } = job.data;
       console.log(`📥 [WhatsAppCommandProcessor] Processando ${job.name} (${job.id}) para ${sessionName} em ${this.workerNodeId}`);
 
@@ -146,7 +146,12 @@ class WhatsAppCommandProcessor {
         default:
           throw new Error(`Comando não suportado: ${job.name}`);
       }
-    });
+    };
+
+    this.queue.process('connect', 2, processCommandJob);
+    this.queue.process('recover', 2, processCommandJob);
+    this.queue.process('disconnect', 2, processCommandJob);
+    this.queue.process('delete', 2, processCommandJob);
 
     this.queue.on('completed', async (job) => {
       await this.refreshHeartbeat();
