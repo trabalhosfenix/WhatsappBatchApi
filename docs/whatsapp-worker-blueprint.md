@@ -192,8 +192,8 @@ Fila principal: `whatsapp.commands`
 
 ## Fase 4 — Realtime + observabilidade
 
-- [ ] SSE/WebSocket de status e QR.
-- [ ] Métricas por sessão:
+- [x] SSE/WebSocket de status e QR (SSE inicial).
+- [x] Métricas por sessão:
   - connect_time
   - reconnect_rate
   - auth_401_rate

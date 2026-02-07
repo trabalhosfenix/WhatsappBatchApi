@@ -13,6 +13,7 @@ const qrcode = require('qrcode');
 const { handleMessage } = require("../controllers/messageController.js")
 const distributedLockService = require('./distributedLockService');
 const sessionStorageProvider = require('./sessionStorageProvider');
+const instanceMetricsService = require('./instanceMetricsService');
 
 // Logger silencioso como no bot que funciona
 const baileysLogger = {
@@ -74,6 +75,33 @@ class WhatsAppService {
 
     async updateOperationalState(instanceId, updates = {}) {
         try {
+            const previous = await WhatsAppInstance.findById(instanceId).select('connectionState lastErrorCode');
+
+            if (updates.connectionState === 'connecting') {
+                await instanceMetricsService.setConnectStart(String(instanceId), Date.now());
+            }
+
+            if (updates.connectionState === 'connected' && previous?.connectionState !== 'connected') {
+                await instanceMetricsService.increment(String(instanceId), 'connect_count', 1);
+                const snapshot = await instanceMetricsService.getSnapshot(String(instanceId));
+                if (snapshot.last_connect_started_at_ms) {
+                    const duration = Math.max(0, Date.now() - snapshot.last_connect_started_at_ms);
+                    await instanceMetricsService.increment(String(instanceId), 'total_connect_time_ms', duration);
+                }
+            }
+
+            if (updates.connectionState === 'reconnecting') {
+                await instanceMetricsService.increment(String(instanceId), 'reconnect_count', 1);
+            }
+
+            if (updates.connectionState === 'qr') {
+                await instanceMetricsService.increment(String(instanceId), 'qr_refresh_count', 1);
+            }
+
+            if (updates.lastErrorCode === '401' && previous?.lastErrorCode !== '401') {
+                await instanceMetricsService.increment(String(instanceId), 'auth_401_count', 1);
+            }
+
             await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                 ...updates,
                 ownerNode: this.workerNodeId,
@@ -369,6 +397,11 @@ class WhatsAppService {
                         } else {
                             console.log(`🚫 [${sessionName}] Sessão inválida (logout/401), reconexão automática desativada`);
                             this.removeSessionFiles(sessionName);
+                            await this.updateOperationalState(instanceId, {
+                                status: 'failed',
+                                connectionState: 'error',
+                                lastErrorCode: '401'
+                            });
                             await this.cleanupInstance(sessionName, instanceId, 'failed');
                         }
                         break;

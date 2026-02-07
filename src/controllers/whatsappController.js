@@ -5,6 +5,7 @@ const messageControlService = require('../services/messageControlService');
 const whatsappCommandQueue = require('../services/whatsappCommandQueue');
 const ownershipService = require('../services/ownershipService');
 const sessionStorageProvider = require('../services/sessionStorageProvider');
+const instanceMetricsService = require('../services/instanceMetricsService');
 
 
 console.log('✅ WhatsAppController carregado - VERSÃO CORRIGIDA');
@@ -693,6 +694,103 @@ exports.disconnectInstance = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Erro ao desconectar instância:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+
+exports.streamInstanceStatus = async (req, res) => {
+  try {
+    const instance = await WhatsAppInstance.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância não encontrada'
+      });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    let lastPayload = '';
+
+    const sendUpdate = async () => {
+      const latest = await WhatsAppInstance.findById(instance._id).lean();
+      if (!latest) return;
+
+      const payloadObj = {
+        instanceId: String(latest._id),
+        status: latest.status,
+        connectionState: latest.connectionState,
+        qrCodeReady: Boolean(latest.qrCode),
+        ownerNode: latest.ownerNode,
+        lastHeartbeat: latest.lastHeartbeat,
+        reconnectAttempts: latest.reconnectAttempts,
+        updatedAt: latest.updatedAt
+      };
+
+      const payload = JSON.stringify(payloadObj);
+      if (payload !== lastPayload) {
+        res.write(`event: state.changed\n`);
+        res.write(`data: ${payload}\n\n`);
+        lastPayload = payload;
+      }
+    };
+
+    await sendUpdate();
+
+    const interval = setInterval(sendUpdate, 2000);
+    const keepAlive = setInterval(() => {
+      res.write(`event: ping\n`);
+      res.write(`data: {}\n\n`);
+    }, 15000);
+
+    req.on('close', () => {
+      clearInterval(interval);
+      clearInterval(keepAlive);
+      res.end();
+    });
+  } catch (error) {
+    console.error('❌ Erro no stream de status:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+exports.getInstanceMetrics = async (req, res) => {
+  try {
+    const instance = await WhatsAppInstance.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+
+    if (!instance) {
+      return res.status(404).json({
+        success: false,
+        error: 'Instância não encontrada'
+      });
+    }
+
+    const metrics = await instanceMetricsService.getSnapshot(String(instance._id));
+
+    res.json({
+      success: true,
+      instanceId: String(instance._id),
+      metrics
+    });
+  } catch (error) {
+    console.error('❌ Erro ao buscar métricas da instância:', error);
     res.status(400).json({
       success: false,
       error: error.message

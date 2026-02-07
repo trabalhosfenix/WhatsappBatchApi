@@ -67,6 +67,10 @@ Fase 3.1 (provider de sessão compartilhada):
 - worker executa bootstrap automático de recover ao subir quando há sessão persistida
 - ownership stale pode ser reassumido pelo owner determinístico (`WORKER_HEARTBEAT_TIMEOUT_MS`)
 
+Fase 4 (realtime + observabilidade inicial):
+- stream de status por SSE em `GET /api/whatsapp/instances/:id/stream`
+- métricas por sessão em `GET /api/whatsapp/instances/:id/metrics`
+
 ## Base URL
 - Local: `http://localhost:3000`
 - Health check: `GET /health`
@@ -128,6 +132,8 @@ curl -X POST http://localhost:3000/api/auth/login \
 - `POST /instances/:id/load-groups`
 - `GET /instances/:id/groups`
 - `GET /instances/:id/status`
+- `GET /instances/:id/stream` (SSE)
+- `GET /instances/:id/metrics`
 
 **Exemplo – Listar instâncias**
 ```bash
