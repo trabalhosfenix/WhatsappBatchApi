@@ -39,6 +39,25 @@ class WhatsAppService {
         this.initializingInstances = new Set();
         this.reconnectionTimers = new Map();
         this.connectionStates = new Map(); // Novo: controle de estado
+        this.sessionLocks = new Map();
+    }
+
+    async withSessionLock(sessionName, operation) {
+        const activeLock = this.sessionLocks.get(sessionName);
+        if (activeLock) {
+            return activeLock;
+        }
+
+        const lockPromise = (async () => {
+            try {
+                return await operation();
+            } finally {
+                this.sessionLocks.delete(sessionName);
+            }
+        })();
+
+        this.sessionLocks.set(sessionName, lockPromise);
+        return lockPromise;
     }
 
     listActiveInstances() {
@@ -195,7 +214,7 @@ class WhatsAppService {
             this.sockets.set(sessionName, socket);
             this.authStates.set(sessionName, { state, saveCreds });
             this.reconnectionAttempts.set(sessionName, 0);
-            this.connectionStates.set(sessionName, 'connected');
+            this.connectionStates.set(sessionName, 'connecting');
 
 
             // socket.ev.on("messages.upsert", async ({ messages, type }) => {
@@ -241,7 +260,9 @@ class WhatsAppService {
         socket.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            console.log(`🔗 [${sessionName}] Status: ${connection}`);
+            if (connection) {
+                console.log(`🔗 [${sessionName}] Status: ${connection}`);
+            }
 
             try {
                 switch (connection) {
@@ -253,8 +274,8 @@ class WhatsAppService {
                         if (qrTimeout) clearTimeout(qrTimeout);
                         if (connectionTimeout) clearTimeout(connectionTimeout);
 
-                        const shouldReconnect =
-                            lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                        const statusCode = lastDisconnect?.error?.output?.statusCode;
+                        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
                         console.log(`🔄 [${sessionName}] Should reconnect: ${shouldReconnect}`);
 
@@ -322,7 +343,7 @@ class WhatsAppService {
                             if (this.connectionStates.get(sessionName) === 'connecting') {
                                 console.log(`⏰ [${sessionName}] Timeout de conexão`);
                                 await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                                    status: 'timeout'
+                                    status: 'failed'
                                 });
                             }
                         }, 30000); // 30 segundos
@@ -342,8 +363,10 @@ class WhatsAppService {
 
                         await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                             qrCode: qrCodeImage,
-                            status: 'qr_code_ready'
+                            status: 'connecting'
                         });
+
+                        this.reconnectionAttempts.set(sessionName, 0);
 
                         console.log(`✅ [${sessionName}] QR Code salvo no banco`);
 
@@ -353,14 +376,14 @@ class WhatsAppService {
                             console.log(`⏰ [${sessionName}] QR Code expirado`);
                             await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                                 qrCode: null,
-                                status: 'qr_expired'
+                                status: 'failed'
                             });
                         }, 120000); // 2 minutos
 
                     } catch (qrError) {
                         console.error(`❌ [${sessionName}] Erro ao gerar QR Code:`, qrError);
                         await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                            status: 'error',
+                            status: 'failed',
                             error: 'Erro ao gerar QR code'
                         });
                     }
@@ -413,6 +436,7 @@ class WhatsAppService {
                 this.sockets.delete(sessionName);
                 this.authStates.delete(sessionName);
                 this.reconnectionAttempts.delete(sessionName);
+                this.connectionStates.set(sessionName, 'disconnected');
             }
 
             // Atualizar banco
@@ -695,6 +719,10 @@ class WhatsAppService {
         return socket && socket.user ? true : false;
     }
 
+    async isInstanceConnected(sessionName) {
+        return this.isConnected(sessionName);
+    }
+
     async getInstanceStatus(sessionName) {
         try {
             const instance = await WhatsAppInstance.findOne({ sessionName });
@@ -944,6 +972,9 @@ class WhatsAppService {
             this.sockets.clear();
             this.authStates.clear();
             this.reconnectionAttempts.clear();
+            this.connectionStates.clear();
+            this.initializingInstances.clear();
+            this.sessionLocks.clear();
 
             console.log('✅ [WhatsAppService] Todas as instâncias limpas');
 
@@ -954,48 +985,57 @@ class WhatsAppService {
     // services/whatsappService.js - ADICIONE ESTA FUNÇÃO:
 
     async reconnectInstance(sessionName, userId) {
-        try {
-            console.log(`🔄 [WhatsAppService] Tentando reconectar: ${sessionName}`);
+        return this.withSessionLock(sessionName, async () => {
+            try {
+                console.log(`🔄 [WhatsAppService] Tentando reconectar: ${sessionName}`);
 
-            // Buscar instância no banco
-            const instance = await WhatsAppInstance.findOne({
-                sessionName,
-                userId
-            });
+                if (this.initializingInstances.has(sessionName)) {
+                    console.log(`⚠️ [${sessionName}] Inicialização em andamento, pulando nova reconexão`);
+                    return true;
+                }
 
-            if (!instance) {
-                throw new Error('Instância não encontrada no banco');
+                const currentState = this.connectionStates.get(sessionName);
+                const existingSocket = this.sockets.get(sessionName);
+                if (existingSocket && (currentState === 'connecting' || currentState === 'connected')) {
+                    console.log(`ℹ️ [${sessionName}] Socket já ativo (${currentState}), mantendo conexão atual`);
+                    return true;
+                }
+
+                const instance = await WhatsAppInstance.findOne({
+                    sessionName,
+                    userId
+                });
+
+                if (!instance) {
+                    throw new Error('Instância não encontrada no banco');
+                }
+
+                await WhatsAppInstance.findByIdAndUpdate(instance._id, {
+                    status: 'connecting',
+                    qrCode: null
+                });
+                this.connectionStates.set(sessionName, 'connecting');
+
+                if (existingSocket) {
+                    try {
+                        await existingSocket.end();
+                    } catch (endError) {
+                        console.warn(`⚠️ [${sessionName}] Erro ao encerrar socket antigo: ${endError.message}`);
+                    }
+                    this.sockets.delete(sessionName);
+                }
+
+                await this.initializeClient(sessionName, userId, instance._id);
+
+                console.log(`✅ [WhatsAppService] Reconexão iniciada para: ${sessionName}`);
+                return true;
+
+            } catch (error) {
+                console.error(`❌ [WhatsAppService] Erro na reconexão:`, error);
+                this.connectionStates.set(sessionName, 'failed');
+                throw error;
             }
-
-            // Limpar socket existente se houver
-            const existingSocket = this.sockets.get(sessionName);
-            if (existingSocket) {
-                await existingSocket.end();
-                this.sockets.delete(sessionName);
-            }
-
-            // Recriar a instância
-            await this.initializeClient(sessionName, userId, instance._id);
-
-            console.log(`✅ [WhatsAppService] Reconexão iniciada para: ${sessionName}`);
-            return true;
-
-        } catch (error) {
-            console.error(`❌ [WhatsAppService] Erro na reconexão:`, error);
-            throw error;
-        }
-    }
-
-
-    async disconnectClient(sessionName) {
-        try {
-            console.log(`🔌 [WhatsAppService] Desconectando: ${sessionName}`);
-            await this.cleanupInstance(sessionName, null, 'disconnected');
-            console.log(`✅ [WhatsAppService] Desconectado: ${sessionName}`);
-        } catch (error) {
-            console.error(`❌ [WhatsAppService] Erro ao desconectar:`, error);
-            throw error;
-        }
+        });
     }
 
     // Reconexão segura
@@ -1030,19 +1070,18 @@ class WhatsAppService {
         }
     }
 
-    async recreateInstance(sessionName, userId) {
-        return this.safeReconnect(sessionName, userId, null);
-    }
-
     async getSocketStatus(sessionName) {
         const socket = this.sockets.get(sessionName);
         const connectionState = this.connectionStates.get(sessionName);
+        const reconnectAttempts = this.reconnectionAttempts.get(sessionName) || 0;
 
         return {
             connected: connectionState === 'connected',
             connectionState: connectionState,
             hasSocket: !!socket,
-            hasUser: !!(socket && socket.user)
+            hasUser: !!(socket && socket.user),
+            reconnectAttempts,
+            reconnecting: this.sessionLocks.has(sessionName) || this.initializingInstances.has(sessionName)
         };
     }
 

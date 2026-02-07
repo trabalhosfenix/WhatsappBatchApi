@@ -1,1 +1,191 @@
 # WhatsappBatchApi
+
+API Node.js/Express para autenticação, gerenciamento de instâncias WhatsApp, grupos de contato, lotes de mensagens e lotes de mídia.
+
+## Requisitos
+- Node.js 18+
+- MongoDB
+
+## Configuração rápida
+1. Instale dependências:
+   ```bash
+   npm install
+   ```
+2. Crie o arquivo `.env` com variáveis mínimas:
+   ```env
+   PORT=3000
+   MONGODB_URI=mongodb://localhost:27017/whatsapp-batch-api
+   JWT_SECRET=sua_chave_jwt
+   CORS_ORIGIN=http://localhost:3000
+   NODE_ENV=development
+   ```
+3. Rode a API:
+   ```bash
+   npm run dev
+   ```
+
+## Base URL
+- Local: `http://localhost:3000`
+- Health check: `GET /health`
+
+
+## Nota de produto
+- A funcionalidade **Agenda de contatos foi descontinuada** no fluxo principal.
+- O agendamento de disparo agora deve ser feito diretamente na criação de **Lotes de mídia** usando o campo `scheduledAt` (ISO 8601) ou o campo de data/hora no frontend.
+
+## Autenticação
+A maior parte das rotas usa token JWT no header `Authorization`:
+
+```http
+Authorization: Bearer <token>
+```
+
+### Fluxo mínimo
+1. `POST /api/auth/register` (ou `POST /api/auth/login`)
+2. Copie o `token` da resposta
+3. Envie o token no header nas rotas protegidas
+
+---
+
+## Endpoints atuais
+
+### Auth (`/api/auth`)
+- `POST /register`
+- `POST /login`
+- `GET /profile` (autenticado)
+
+**Exemplo – Login**
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@email.com","password":"123456"}'
+```
+
+**Resposta (200)**
+```json
+{
+  "success": true,
+  "user": {
+    "id": "65f...",
+    "name": "Usuário",
+    "email": "user@email.com",
+    "role": "user"
+  },
+  "token": "eyJhbGci..."
+}
+```
+
+### WhatsApp (`/api/whatsapp`) — autenticado
+- `POST /instances`
+- `GET /instances`
+- `GET /instances/:id`
+- `DELETE /instances/:sessionName`
+- `GET /instances/:id/qrcode`
+- `PUT /instances/:id/disconnect`
+- `POST /instances/:id/load-groups`
+- `GET /instances/:id/groups`
+- `GET /instances/:id/status`
+
+**Exemplo – Listar instâncias**
+```bash
+curl http://localhost:3000/api/whatsapp/instances \
+  -H "Authorization: Bearer <token>"
+```
+
+### Grupos de contato (`/api/contact-groups`) — autenticado
+- `GET /`
+- `POST /`
+- `GET /:id`
+- `PUT /:id`
+- `DELETE /:id`
+- `POST /:id/contacts`
+- `GET /instance/:instanceId`
+- `POST /instance/:instanceId/sync`
+- `GET /filters/advanced`
+
+**Exemplo – Criar grupo**
+```bash
+curl -X POST http://localhost:3000/api/contact-groups \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Clientes SP","description":"Base de clientes SP"}'
+```
+
+**Resposta (201)**
+```json
+{
+  "success": true,
+  "message": "Grupo de contatos criado com sucesso",
+  "contactGroup": {
+    "_id": "66a...",
+    "name": "Clientes SP",
+    "description": "Base de clientes SP"
+  }
+}
+```
+
+### Lotes de mensagens (`/api/batches`) — autenticado
+- `POST /`
+- `GET /`
+- `GET /:id`
+- `PUT /:id/cancel`
+- `GET /debug/socket/:instanceId`
+
+### Lotes de mídia (`/api/media`)
+Público:
+- `GET /public-media/:userId/:filename`
+
+Autenticado:
+- `GET /media-file/:userId/:filename`
+- `POST /upload`
+- `POST /batches` (aceita `scheduledAt` opcional para envio agendado)
+- `GET /batches`
+- `GET /batches/:id`
+- `PUT /batches/:id/cancel`
+- `DELETE /batches/:id`
+
+### Controle de mensagens (`/api/message-control`)
+- `POST /:sessionName/enable`
+- `POST /:sessionName/disable`
+- `GET /:sessionName/status`
+- `GET /active`
+
+### Admin (`/api/admin`) — autenticado + role `admin`
+- `GET /users/stats`
+- `GET /users`
+- `GET /messages/stats`
+- `GET /system/stats`
+
+---
+
+## Formato padrão de erro
+Exemplo comum de erro:
+
+```json
+{
+  "success": false,
+  "error": "Token inválido"
+}
+```
+
+## Scripts disponíveis
+- `npm run dev` — desenvolvimento com nodemon
+- `npm start` — produção
+- `npm test` — Jest
+
+
+**Exemplo – Criar lote de mídia agendado**
+```bash
+curl -X POST http://localhost:3000/api/media/batches \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":"Campanha fim de semana",
+    "whatsappInstanceId":"66b...",
+    "contactGroupIds":["66c..."],
+    "mediaItems":[{"fileName":"banner.jpg","mimeType":"image/jpeg"}],
+    "caption":"Promoção válida hoje",
+    "scheduledAt":"2026-02-08T14:00:00.000Z",
+    "options":{"delayBetweenMessages":3000}
+  }'
+```
