@@ -859,9 +859,9 @@ class WhatsAppManager {
                         </button>
                     ` : ''}
 
-                    ${hasQRCode && !shouldPrioritizeRecover ? `
+                    ${instance.status !== 'connected' && !shouldPrioritizeRecover ? `
                         <button class="btn btn-info" onclick="app.whatsappManager.showQRCode('${instance._id}')">
-                            <i class="fas fa-link"></i> Conectar WhatsApp
+                            <i class="fas fa-link"></i> ${hasQRCode ? 'Conectar WhatsApp' : 'Gerar novo QR'}
                         </button>
                     ` : ''}
 

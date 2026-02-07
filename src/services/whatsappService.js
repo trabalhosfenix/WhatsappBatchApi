@@ -60,6 +60,18 @@ class WhatsAppService {
         return lockPromise;
     }
 
+    removeSessionFiles(sessionName) {
+        try {
+            const sessionDir = path.join(__dirname, '..', 'auth_sessions', sessionName);
+            if (fs.existsSync(sessionDir)) {
+                fs.rmSync(sessionDir, { recursive: true, force: true });
+                console.log(`🧽 [${sessionName}] Sessão local removida após logout/401`);
+            }
+        } catch (error) {
+            console.warn(`⚠️ [${sessionName}] Falha ao remover sessão local: ${error.message}`);
+        }
+    }
+
     listActiveInstances() {
         console.log('📋 Instâncias ativas no WhatsAppService:');
         console.log('- Sockets:', Array.from(this.sockets.keys()));
@@ -275,7 +287,9 @@ class WhatsAppService {
                         if (connectionTimeout) clearTimeout(connectionTimeout);
 
                         const statusCode = lastDisconnect?.error?.output?.statusCode;
-                        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                        const disconnectReason = lastDisconnect?.error?.data?.reason;
+                        const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401 || disconnectReason === '401';
+                        const shouldReconnect = !isLoggedOut;
 
                         console.log(`🔄 [${sessionName}] Should reconnect: ${shouldReconnect}`);
 
@@ -306,8 +320,9 @@ class WhatsAppService {
                                 await this.cleanupInstance(sessionName, instanceId, 'failed');
                             }
                         } else {
-                            console.log(`🚫 [${sessionName}] Deslogado, reconexão não necessária`);
-                            await this.cleanupInstance(sessionName, instanceId, 'disconnected');
+                            console.log(`🚫 [${sessionName}] Sessão inválida (logout/401), reconexão automática desativada`);
+                            this.removeSessionFiles(sessionName);
+                            await this.cleanupInstance(sessionName, instanceId, 'failed');
                         }
                         break;
 
