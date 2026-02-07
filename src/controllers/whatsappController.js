@@ -219,7 +219,12 @@ exports.getQRCode = async (req, res) => {
     if (!instance.qrCode) {
       if (instance.status !== 'connected') {
         try {
-          await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
+          const socketStatus = await whatsappBaileysService.getSocketStatus(instance.sessionName);
+          const shouldReconnect = !socketStatus.hasSocket || ['disconnected', 'failed'].includes(socketStatus.connectionState);
+
+          if (shouldReconnect) {
+            await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
+          }
         } catch (reconnectError) {
           console.warn(`⚠️ Não foi possível iniciar reconexão para gerar QR: ${reconnectError.message}`);
         }

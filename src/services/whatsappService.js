@@ -965,6 +965,19 @@ class WhatsAppService {
         try {
             console.log(`🔄 [WhatsAppService] Tentando reconectar: ${sessionName}`);
 
+            // Evitar reinicialização em cascata durante polling de QR
+            if (this.initializingInstances.has(sessionName)) {
+                console.log(`⚠️ [${sessionName}] Inicialização em andamento, pulando nova reconexão`);
+                return true;
+            }
+
+            const currentState = this.connectionStates.get(sessionName);
+            const existingSocket = this.sockets.get(sessionName);
+            if (existingSocket && (currentState === 'connecting' || currentState === 'connected')) {
+                console.log(`ℹ️ [${sessionName}] Socket já ativo (${currentState}), mantendo conexão atual`);
+                return true;
+            }
+
             // Buscar instância no banco
             const instance = await WhatsAppInstance.findOne({
                 sessionName,
@@ -975,10 +988,13 @@ class WhatsAppService {
                 throw new Error('Instância não encontrada no banco');
             }
 
-            // Limpar socket existente se houver
-            const existingSocket = this.sockets.get(sessionName);
+            // Limpar socket existente apenas quando realmente necessário
             if (existingSocket) {
-                await existingSocket.end();
+                try {
+                    await existingSocket.end();
+                } catch (endError) {
+                    console.warn(`⚠️ [${sessionName}] Erro ao encerrar socket antigo: ${endError.message}`);
+                }
                 this.sockets.delete(sessionName);
             }
 
@@ -1036,10 +1052,6 @@ class WhatsAppService {
             console.error(`❌ [${sessionName}] Erro na reconexão segura:`, error);
             this.connectionStates.set(sessionName, 'failed');
         }
-    }
-
-    async recreateInstance(sessionName, userId) {
-        return this.safeReconnect(sessionName, userId, null);
     }
 
     async getSocketStatus(sessionName) {
