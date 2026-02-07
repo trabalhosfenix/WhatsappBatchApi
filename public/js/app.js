@@ -834,6 +834,7 @@ class WhatsAppManager {
 
         container.innerHTML = instances.map(instance => {
             const hasQRCode = Boolean(instance.qrCodeReady || instance.qrCode);
+            const canRecover = Boolean(instance.canAttemptRecovery || instance.sessionPersisted) && instance.status !== 'connected';
 
             return `
             <div class="list-item" data-instance-id="${instance._id}">
@@ -852,6 +853,12 @@ class WhatsAppManager {
                     ${hasQRCode ? `
                         <button class="btn btn-info" onclick="app.whatsappManager.showQRCode('${instance._id}')">
                             <i class="fas fa-link"></i> Conectar WhatsApp
+                        </button>
+                    ` : ''}
+
+                    ${!hasQRCode && canRecover ? `
+                        <button class="btn btn-primary" onclick="app.whatsappManager.recoverInstanceSession('${instance._id}')">
+                            <i class="fas fa-rotate"></i> Recuperar Sessão
                         </button>
                     ` : ''}
                     
@@ -1264,6 +1271,34 @@ class WhatsAppManager {
     }
 
     // No arquivo app.js - WhatsAppManager class
+
+
+    async recoverInstanceSession(instanceId) {
+        if (!this.auth) return;
+
+        try {
+            this.auth.showLoading();
+            const response = await fetch(`/api/whatsapp/instances/${instanceId}/recover`, {
+                method: 'POST',
+                headers: this.auth.getAuthHeaders()
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.auth.showNotification(data.message || 'Recuperação de sessão iniciada', 'success');
+                this.state.cache.instances = null;
+                this.state.cache.lastUpdated = null;
+                this.loadInstances(true);
+            } else {
+                throw new Error(data.error || 'Não foi possível recuperar a sessão');
+            }
+        } catch (error) {
+            this.auth.showNotification(error.message, 'error');
+        } finally {
+            this.auth.hideLoading();
+        }
+    }
 
     async disconnectInstance(instanceId) {
         if (!confirm('Tem certeza que deseja desconectar esta instância?') || !this.auth) {
