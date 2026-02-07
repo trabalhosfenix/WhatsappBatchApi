@@ -2,25 +2,35 @@ const ContactGroup = require('../models/ContactGroup');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const whatsappBaileysService = require('../services/whatsappService');
 const messageControlService = require('../services/messageControlService');
-const fs = require('fs');
-const path = require('path');
+const whatsappCommandQueue = require('../services/whatsappCommandQueue');
+const ownershipService = require('../services/ownershipService');
+const sessionStorageProvider = require('../services/sessionStorageProvider');
 
 
 console.log('✅ WhatsAppController carregado - VERSÃO CORRIGIDA');
 
 
-const hasSavedSession = (sessionName) => {
-  try {
-    const sessionDir = path.join(__dirname, '..', 'auth_sessions', sessionName);
-    if (!fs.existsSync(sessionDir)) return false;
+const isQueueFirstRequired = () => (process.env.QUEUE_FIRST_MODE === 'true' || process.env.NODE_ENV === 'production');
 
-    const entries = fs.readdirSync(sessionDir);
-    return entries.length > 0;
-  } catch (error) {
-    console.warn(`⚠️ Não foi possível validar sessão salva para ${sessionName}:`, error.message);
-    return false;
+const hasSavedSession = (sessionName) => sessionStorageProvider.hasSavedSession(sessionName);
+
+const enqueueLifecycleCommand = async ({ command, sessionName, userId, instanceId }) => {
+  const ownerNode = ownershipService.resolveOwner({ userId, sessionName });
+  const queueName = ownershipService.getQueueNameForOwner(ownerNode);
+
+  if (instanceId) {
+    await WhatsAppInstance.findByIdAndUpdate(instanceId, { ownerNode });
   }
+
+  const enqueueResult = await whatsappCommandQueue.enqueue(command, {
+    sessionName,
+    userId,
+    ownerNode
+  }, { queueName });
+
+  return { ...enqueueResult, ownerNode, queueName };
 };
+
 
 
 exports.createInstance = async (req, res) => {
@@ -40,20 +50,37 @@ exports.createInstance = async (req, res) => {
 
     console.log(`🚀 [Baileys] Criando instância: ${sessionName}`);
 
+    if (!whatsappCommandQueue.isEnabled() && isQueueFirstRequired()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Modo queue-first ativo: REDIS_URL é obrigatória para comandos de ciclo de vida.'
+      });
+    }
+
+    if (whatsappCommandQueue.isEnabled()) {
+      const enqueueResult = await enqueueLifecycleCommand({
+        command: 'connect',
+        sessionName,
+        userId: String(req.user._id)
+      });
+
+      return res.status(202).json({
+        success: true,
+        queued: true,
+        command: 'connect',
+        ownerNode: enqueueResult.ownerNode,
+        queueName: enqueueResult.queueName,
+        jobId: enqueueResult.jobId,
+        message: 'Comando de conexão enfileirado. Aguarde e consulte o status da instância.'
+      });
+    }
+
     const instance = await whatsappBaileysService.createClient(sessionName, req.user._id);
     const updatedInstance = await WhatsAppInstance.findById(instance._id);
 
-    // setTimeout(async () => {
-    //   try {
-    //     await messageControlService.enableMessageTracking(sessionName);
-    //     console.log(`✅ Tracking ativado automaticamente para: ${sessionName}`);
-    //   } catch (trackingError) {
-    //     console.error(`❌ Erro no tracking automático:`, trackingError);
-    //   }
-    // }, 3000);
-
     res.status(201).json({
       success: true,
+      queued: false,
       instance: {
         _id: updatedInstance._id,
         sessionName: updatedInstance.sessionName,
@@ -67,9 +94,18 @@ exports.createInstance = async (req, res) => {
 
   } catch (error) {
     console.error('❌ [Baileys] Erro:', error);
-    res.status(400).json({
+
+    const isUserInstanceConflict = error.message?.includes('Usuário já possui instância ativa');
+    const isDuplicateKey = error.code === 11000;
+
+    const statusCode = isUserInstanceConflict || isDuplicateKey ? 409 : 400;
+    const errorMessage = isDuplicateKey
+      ? 'Usuário já possui uma instância cadastrada. Remova a existente antes de criar outra.'
+      : error.message;
+
+    res.status(statusCode).json({
       success: false,
-      error: error.message
+      error: errorMessage
     });
   }
 };
@@ -101,11 +137,37 @@ exports.deleteInstance = async (req, res) => {
       });
     }
 
-    // Deletar a instância usando o serviço
+    if (!whatsappCommandQueue.isEnabled() && isQueueFirstRequired()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Modo queue-first ativo: REDIS_URL é obrigatória para comandos de ciclo de vida.'
+      });
+    }
+
+    if (whatsappCommandQueue.isEnabled()) {
+      const enqueueResult = await enqueueLifecycleCommand({
+        command: 'delete',
+        sessionName,
+        userId: String(req.user._id),
+        instanceId: instance._id
+      });
+
+      return res.status(202).json({
+        success: true,
+        queued: true,
+        command: 'delete',
+        ownerNode: enqueueResult.ownerNode,
+        queueName: enqueueResult.queueName,
+        jobId: enqueueResult.jobId,
+        message: `Comando de remoção da instância ${sessionName} enfileirado`
+      });
+    }
+
     await whatsappBaileysService.deleteInstance(sessionName);
 
     res.status(200).json({
       success: true,
+      queued: false,
       message: `Instância ${sessionName} deletada com sucesso`
     });
 
@@ -235,7 +297,16 @@ exports.getQRCode = async (req, res) => {
           const shouldReconnect = !socketStatus.hasSocket || ['disconnected', 'failed'].includes(socketStatus.connectionState);
 
           if (shouldReconnect) {
-            await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
+            if (whatsappCommandQueue.isEnabled()) {
+              await enqueueLifecycleCommand({
+                command: 'recover',
+                sessionName: instance.sessionName,
+                userId: String(req.user._id),
+                instanceId: instance._id
+              });
+            } else if (!isQueueFirstRequired()) {
+              await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
+            }
           }
         } catch (reconnectError) {
           console.warn(`⚠️ Não foi possível iniciar reconexão para gerar QR: ${reconnectError.message}`);
@@ -300,6 +371,28 @@ exports.loadGroups = async (req, res) => {
 
     if (!socketStatus.connected) {
       console.log(`🔄 Tentando reconectar instância...`);
+      if (whatsappCommandQueue.isEnabled()) {
+        await enqueueLifecycleCommand({
+          command: 'recover',
+          sessionName: instance.sessionName,
+          userId: String(req.user._id),
+          instanceId: instance._id
+        });
+
+        return res.status(409).json({
+          success: false,
+          queued: true,
+          message: 'Instância não conectada. Recuperação enfileirada; tente novamente após o status mudar para connected.'
+        });
+      }
+
+      if (isQueueFirstRequired()) {
+        return res.status(503).json({
+          success: false,
+          error: 'Modo queue-first ativo: recuperação deve ocorrer via fila com REDIS_URL habilitada.'
+        });
+      }
+
       try {
         await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
         await new Promise(resolve => setTimeout(resolve, 3000));
@@ -492,6 +585,39 @@ exports.recoverInstance = async (req, res) => {
       });
     }
 
+    if (!whatsappCommandQueue.isEnabled() && isQueueFirstRequired()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Modo queue-first ativo: REDIS_URL é obrigatória para comandos de ciclo de vida.'
+      });
+    }
+
+    if (whatsappCommandQueue.isEnabled()) {
+      const enqueueResult = await enqueueLifecycleCommand({
+        command: 'recover',
+        sessionName: instance.sessionName,
+        userId: String(req.user._id),
+        instanceId: instance._id
+      });
+
+      return res.status(202).json({
+        success: true,
+        queued: true,
+        command: 'recover',
+        ownerNode: enqueueResult.ownerNode,
+        queueName: enqueueResult.queueName,
+        jobId: enqueueResult.jobId,
+        message: 'Recuperação enfileirada. Aguarde e atualize o status.',
+        instance: {
+          _id: instance._id,
+          sessionName: instance.sessionName,
+          status: 'connecting',
+          sessionPersisted: true,
+          canAttemptRecovery: true
+        }
+      });
+    }
+
     await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
 
     res.json({
@@ -530,12 +656,39 @@ exports.disconnectInstance = async (req, res) => {
       });
     }
 
+    if (!whatsappCommandQueue.isEnabled() && isQueueFirstRequired()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Modo queue-first ativo: REDIS_URL é obrigatória para comandos de ciclo de vida.'
+      });
+    }
+
+    if (whatsappCommandQueue.isEnabled()) {
+      const enqueueResult = await enqueueLifecycleCommand({
+        command: 'disconnect',
+        sessionName: instance.sessionName,
+        userId: String(req.user._id),
+        instanceId: instance._id
+      });
+
+      return res.status(202).json({
+        success: true,
+        queued: true,
+        command: 'disconnect',
+        ownerNode: enqueueResult.ownerNode,
+        queueName: enqueueResult.queueName,
+        jobId: enqueueResult.jobId,
+        message: 'Comando de desconexão enfileirado com sucesso'
+      });
+    }
+
     await whatsappBaileysService.disconnectClient(instance.sessionName);
 
     console.log(`✅ Instância desconectada: ${instance.sessionName}`);
 
     res.json({
       success: true,
+      queued: false,
       message: 'Instância desconectada com sucesso'
     });
   } catch (error) {
