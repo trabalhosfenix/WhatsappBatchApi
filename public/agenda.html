@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agenda de Contatos - WhatsApp Manager</title>
+    <link rel="stylesheet" href="css/agenda.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+
+<body>
+    <!-- Header (integrado com seu sistema existente) -->
+    <header class="header">
+        <div class="header-content">
+            <h1 class="logo">
+                <i class="fas fa-address-book"></i>
+                Agenda de Contatos
+            </h1>
+            <div class="user-menu">
+                <span id="userName">Usuário</span>
+                <button id="voltarBtn" class="btn-voltar btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Voltar
+                </button>
+                <button id="logoutBtn" class="btn-logout btn btn-secondary">
+                    <i class="fas fa-sign-out-alt"></i> Sair
+                </button>
+
+
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation (integrada com seu sistema) -->
+    <nav class="main-nav">
+        <button class="nav-btn" data-section="contactsSection">
+            <i class="fas fa-users"></i>
+            Contatos
+        </button>
+        <button class="nav-btn" data-section="groupsSection">
+            <i class="fas fa-layer-group"></i>
+            Grupos
+        </button>
+        <button class="nav-btn" data-section="profileSection">
+            <i class="fas fa-user-cog"></i>
+            Meu Perfil
+        </button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Seção Contatos -->
+        <section id="contactsSection" class="content-section active">
+            <div class="section-header">
+                <h2>Meus Contatos</h2>
+                <div class="section-actions">
+                    <button id="loadContactsBtn" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i>
+                        Carregar Contatos
+                    </button>
+                    <button id="addContactBtn" class="btn btn-secondary">
+                        <i class="fas fa-plus"></i>
+                        Novo Contato
+                    </button>
+                </div>
+            </div>
+            </div>
+
+            <!-- Filtros e Busca -->
+            <!-- Filtros e Busca - VERSÃO ATUALIZADA -->
+            <div class="filters-bar">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchContacts" placeholder="Buscar por nome, telefone ou WhatsApp...">
+                </div>
+
+                <div class="filter-options">
+                    <div class="filter-group">
+                        <label for="filterPlatform">Plataforma:</label>
+                        <select id="filterPlatform">
+                            <option value="">Todas as Plataformas</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="filterGroup">Grupo:</label>
+                        <select id="filterGroup">
+                            <option value="">Todos os Grupos</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="sortContacts">Ordenar por:</label>
+                        <select id="sortContacts">
+                            <option value="name">Nome A-Z</option>
+                            <option value="recent">Mais Recentes</option>
+                            <option value="business">Contas Business</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Filtros Avançados -->
+                <div id="advancedFilters" class="advanced-filters"></div>
+            </div>
+
+            <!-- Lista de Contatos -->
+            <div class="contacts-grid" id="contactsList">
+                <div class="empty-state">
+                    <i class="fas fa-address-book"></i>
+                    <h3>Contatos não carregados</h3>
+                    <p>Clique em "Carregar Contatos" para visualizar sua agenda</p>
+                    <button id="loadContactsInitialBtn" class="btn btn-primary">
+                        <i class="fas fa-download"></i>
+                        Carregar Contatos
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção Grupos -->
+        <!-- Seção Grupos - ATUALIZADA COM FILTROS -->
+        <section id="groupsSection" class="content-section">
+            <div class="section-header">
+                <h2>Grupos de Contatos</h2>
+                <div class="section-actions">
+                    <button id="loadGroupsBtn" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i>
+                        Carregar Grupos
+                    </button>
+                </div>
+            </div>
+
+            <!-- NOVA BARRA DE FILTROS PARA GRUPOS -->
+            <div class="filters-bar">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchGroups" placeholder="Buscar grupos por nome...">
+                </div>
+
+                <div class="filter-options">
+                    <div class="filter-group">
+                        <label for="filterGroupPlatform">Plataforma:</label>
+                        <select id="filterGroupPlatform">
+                            <option value="">Todas as Plataformas</option>
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="filterGroupInstance">Instância:</label>
+                        <select id="filterGroupInstance">
+                            <option value="">Todas as Instâncias</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="sortGroups">Ordenar por:</label>
+                        <select id="sortGroups">
+                            <option value="name">Nome A-Z</option>
+                            <option value="recent">Mais Recentes</option>
+                            <option value="contacts">Mais Contatos</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="groups-grid" id="groupsList">
+                <div class="empty-state">
+                    <i class="fas fa-layer-group"></i>
+                    <h3>Grupos não carregados</h3>
+                    <p>Clique em "Carregar Grupos" para visualizar seus grupos</p>
+                    <button id="loadGroupsInitialBtn" class="btn btn-primary">
+                        <i class="fas fa-download"></i>
+                        Carregar Grupos
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção Perfil -->
+        <section id="profileSection" class="content-section">
+            <div class="profile-container">
+                <div class="profile-header">
+                    <div class="profile-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <h2 id="profileName">Nome do Usuário</h2>
+                    <p id="profileEmail">email@exemplo.com</p>
+                </div>
+
+                <div class="profile-stats">
+                    <div class="stat-card">
+                        <h3 id="totalContacts">0</h3>
+                        <p>Contatos</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="totalGroups">0</h3>
+                        <p>Grupos</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="connectedInstances">0</h3>
+                        <p>Instâncias</p>
+                    </div>
+                </div>
+
+                <form class="profile-form" id="profileForm">
+                    <div class="form-group">
+                        <label for="userNameInput">Nome</label>
+                        <input type="text" id="userNameInput" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="userEmailInput">Email</label>
+                        <input type="email" id="userEmailInput" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="userPasswordInput">Nova Senha (opcional)</label>
+                        <input type="password" id="userPasswordInput" placeholder="Deixe em branco para manter a atual">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i>
+                        Salvar Alterações
+                    </button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modais -->
+    <div id="contactModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Adicionar Contato</h3>
+                <button class="close">&times;</button>
+            </div>
+            <form id="contactForm" class="modal-form">
+                <input type="hidden" id="contactId">
+
+                <div class="form-group">
+                    <label for="contactName">Nome *</label>
+                    <input type="text" id="contactName" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="contactPhone">Telefone *</label>
+                    <input type="tel" id="contactPhone" required placeholder="55 (11) 99999-9999">
+                </div>
+
+                <div class="form-group">
+                    <label for="contactWhatsAppId">ID WhatsApp (opcional)</label>
+                    <input type="text" id="contactWhatsAppId" placeholder="5511999999999@s.whatsapp.net">
+                </div>
+
+                <div class="form-group">
+                    <label for="contactGroups">Grupos</label>
+                    <select id="contactGroups" multiple>
+                        <!-- Grupos serão carregados aqui -->
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="contactPhoto">Foto (URL)</label>
+                    <input type="url" id="contactPhoto" placeholder="https://exemplo.com/foto.jpg">
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Contato</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="groupModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="groupModalTitle">Criar Grupo</h3>
+                <button class="close">&times;</button>
+            </div>
+            <form id="groupForm" class="modal-form">
+                <input type="hidden" id="groupId">
+
+                <div class="form-group">
+                    <label for="groupName">Nome do Grupo *</label>
+                    <input type="text" id="groupName" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="groupDescription">Descrição</label>
+                    <textarea id="groupDescription" rows="3"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Selecionar Contatos</label>
+                    <div class="contacts-selection" id="groupContactsSelection">
+                        <!-- Lista de contatos para seleção -->
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Grupo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Modal Novo Contato -->
+    <div id="newContactModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header">
+                <h3>Novo Contato</h3>
+                <button class="close">&times;</button>
+            </div>
+            <form id="newContactForm" class="modal-form">
+                <div class="form-group">
+                    <label for="newContactName">Nome *</label>
+                    <input type="text" id="newContactName" required placeholder="Nome completo">
+                </div>
+
+                <div class="form-group">
+                    <label for="newContactPhone">Telefone *</label>
+                    <input type="tel" id="newContactPhone" required placeholder="55 (11) 99999-9999">
+                </div>
+
+                <div class="form-group">
+                    <label for="newContactGroups">Grupos *</label>
+                    <select id="newContactGroups" multiple required style="height: 120px;">
+                        <!-- Grupos serão carregados via JavaScript -->
+                    </select>
+                    <small>Segure Ctrl para selecionar múltiplos grupos</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="newContactEmail">Email (opcional)</label>
+                    <input type="email" id="newContactEmail" placeholder="email@exemplo.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="newContactNotes">Observações</label>
+                    <textarea id="newContactNotes" rows="3" placeholder="Informações adicionais..."></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary modal-cancel">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Contato</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+
+    <!-- Loading e Notificações (usando seus sistemas existentes) -->
+    <div id="loading" class="loading" style="display: none;">
+        <i class="fas fa-spinner fa-spin"></i>
+        <span>Carregando...</span>
+    </div>
+
+    <div id="notification" class="notification" style="display: none;"></div>
+
+    <!-- ORDEM CORRETA DE CARREGAMENTO -->
+    <script src="js/security.js"></script>
+    <script src="js/state-manager.js"></script>
+    <script src="js/theme-manager.js"></script>
+    <script src="js/agenda.js"></script>
+
+
+    <script>
+        // Inicialização independente da agenda
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log('📍 Inicializando Agenda de forma independente...');
+
+            // Criar auth mock compatível com localStorage
+            const authMock = {
+                getAuthHeaders: function () {
+                    const token = localStorage.getItem('authToken');
+                    return {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    };
+                },
+                showNotification: function (message, type) {
+                    const notification = document.getElementById('notification');
+                    if (notification) {
+                        notification.textContent = message;
+                        notification.className = `notification ${type}`;
+                        notification.style.display = 'block';
+                        setTimeout(() => {
+                            notification.style.display = 'none';
+                        }, 3000);
+                    }
+                },
+                showLoading: function () {
+                    const loading = document.getElementById('loading');
+                    if (loading) loading.style.display = 'flex';
+                },
+                hideLoading: function () {
+                    const loading = document.getElementById('loading');
+                    if (loading) loading.style.display = 'none';
+                }
+            };
+
+            // Inicializar agenda
+            window.agendaManager = new AgendaManager(authMock);
+
+            window.themeManager = new ThemeManager();
+
+            if (!window.agendaManager.init()) {
+                console.log('❌ Agenda não inicializada - redirecionando...');
+            }
+
+            const voltarBtn = document.getElementById('voltarBtn');
+            if (voltarBtn) {
+                voltarBtn.addEventListener('click', function () {
+                    window.location.href = 'index.html'; // Ajuste conforme necessário
+                });
+            }
+        });
+    </script>
+
+</body>
+
+</html>

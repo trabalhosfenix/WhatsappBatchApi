@@ -1,0 +1,268 @@
+[
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de001956c",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363405123610349@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de001956e",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363404691336652@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019573",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363397712641405@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019570",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363423176738188@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019571",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "5521997757028-1608758202@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019572",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363421852427939@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019574",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363404091070347@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019575",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "5521989603396-1592606537@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019576",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "5521998795891-1460905842@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019577",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363419415412308@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019578",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "5514981074710-1630506326@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de001956d",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363158724498463@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de001957a",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "556191189468-1540330796@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc6a0c90b40de001957c",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363159152790819@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de001956f",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363404947325543@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc690c90b40de001957b",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363405556518365@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900bc680c90b40de0019579",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "557781313864-1610536211@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e7a51c128784bc2b1d",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363405123610349@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68f58ee2e6fe9bd3e90107e3",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363158724498463@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e7a51c128784bc2b1e",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363404691336652@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68f58f17e6fe9bd3e90107eb",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363404947325543@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e7a51c128784bc2b2d",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363423176738188@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e7a51c128784bc2b31",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "5521997757028-1608758202@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e7a51c128784bc2b33",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363421852427939@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e7a51c128784bc2b25",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363397712641405@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e7a51c128784bc2b49",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363404091070347@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e8a51c128784bc2b50",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "5521989603396-1592606537@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e8a51c128784bc2b51",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "5521998795891-1460905842@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e8a51c128784bc2b52",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363419415412308@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68e842e8a51c128784bc2b54",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "5514981074710-1630506326@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68fe478bf6e0569b3969429e",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "557781313864-1610536211@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68f58ee3e6fe9bd3e90107e8",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "556191189468-1540330796@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68f63eb1e6fe9bd3e90107ee",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363405556518365@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "68f58ee3e6fe9bd3e90107ea",
+    "userId": "68d87e897f4bac28294fa013",
+    "jid": "120363159152790819@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900d69ca3c45fbe9ca36eaa",
+    "userId": "6900d537fcbdc261da4a3e8e",
+    "jid": "5521997757028-1608758202@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900d69ca3c45fbe9ca36eab",
+    "userId": "6900d537fcbdc261da4a3e8e",
+    "jid": "120363397712641405@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900d5ffa3c45fbe9ca36e93",
+    "userId": "6900d537fcbdc261da4a3e8e",
+    "jid": "5521997757028-1608758202@g.us",
+    "reason": "duplicata"
+  },
+  {
+    "type": "group_deleted",
+    "groupId": "6900d5ffa3c45fbe9ca36e95",
+    "userId": "6900d537fcbdc261da4a3e8e",
+    "jid": "120363397712641405@g.us",
+    "reason": "duplicata"
+  }
+]
