@@ -4,16 +4,27 @@ const whatsappService = require('../services/whatsappService');
 const WhatsAppCommandProcessor = require('../services/whatsappCommandProcessor');
 
 const processor = new WhatsAppCommandProcessor(whatsappService);
+let heartbeatTimer;
 
 async function bootstrap() {
   await connectDB();
   await processor.start();
+
+  heartbeatTimer = setInterval(async () => {
+    try {
+      await processor.refreshHeartbeat();
+    } catch (error) {
+      console.warn(`⚠️ Falha no heartbeat do worker: ${error.message}`);
+    }
+  }, 10000);
+
   console.log('👷 WhatsApp worker ativo e aguardando comandos...');
 }
 
 async function shutdown(signal) {
   console.log(`\n🛑 Worker recebeu ${signal}, encerrando...`);
   try {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     await processor.stop();
     await whatsappService.cleanupAllInstances();
     process.exit(0);

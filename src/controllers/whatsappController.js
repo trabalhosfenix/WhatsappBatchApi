@@ -3,6 +3,7 @@ const WhatsAppInstance = require('../models/WhatsAppInstance');
 const whatsappBaileysService = require('../services/whatsappService');
 const messageControlService = require('../services/messageControlService');
 const whatsappCommandQueue = require('../services/whatsappCommandQueue');
+const ownershipService = require('../services/ownershipService');
 const fs = require('fs');
 const path = require('path');
 
@@ -42,15 +43,22 @@ exports.createInstance = async (req, res) => {
     console.log(`🚀 [Baileys] Criando instância: ${sessionName}`);
 
     if (whatsappCommandQueue.isEnabled()) {
+      const userId = String(req.user._id);
+      const ownerNode = ownershipService.resolveOwner({ userId, sessionName });
+      const queueName = ownershipService.getQueueNameForOwner(ownerNode);
+
       const enqueueResult = await whatsappCommandQueue.enqueue('connect', {
         sessionName,
-        userId: String(req.user._id)
-      });
+        userId,
+        ownerNode
+      }, { queueName });
 
       return res.status(202).json({
         success: true,
         queued: true,
         command: 'connect',
+        ownerNode,
+        queueName,
         jobId: enqueueResult.jobId,
         message: 'Comando de conexão enfileirado. Aguarde e consulte o status da instância.'
       });
@@ -510,15 +518,24 @@ exports.recoverInstance = async (req, res) => {
     }
 
     if (whatsappCommandQueue.isEnabled()) {
+      const userId = String(req.user._id);
+      const ownerNode = ownershipService.resolveOwner({ userId, sessionName: instance.sessionName });
+      const queueName = ownershipService.getQueueNameForOwner(ownerNode);
+
+      await WhatsAppInstance.findByIdAndUpdate(instance._id, { ownerNode });
+
       const enqueueResult = await whatsappCommandQueue.enqueue('recover', {
         sessionName: instance.sessionName,
-        userId: String(req.user._id)
-      });
+        userId,
+        ownerNode
+      }, { queueName });
 
       return res.status(202).json({
         success: true,
         queued: true,
         command: 'recover',
+        ownerNode,
+        queueName,
         jobId: enqueueResult.jobId,
         message: 'Recuperação enfileirada. Aguarde e atualize o status.',
         instance: {
@@ -570,15 +587,24 @@ exports.disconnectInstance = async (req, res) => {
     }
 
     if (whatsappCommandQueue.isEnabled()) {
+      const userId = String(req.user._id);
+      const ownerNode = ownershipService.resolveOwner({ userId, sessionName: instance.sessionName });
+      const queueName = ownershipService.getQueueNameForOwner(ownerNode);
+
+      await WhatsAppInstance.findByIdAndUpdate(instance._id, { ownerNode });
+
       const enqueueResult = await whatsappCommandQueue.enqueue('disconnect', {
         sessionName: instance.sessionName,
-        userId: String(req.user._id)
-      });
+        userId,
+        ownerNode
+      }, { queueName });
 
       return res.status(202).json({
         success: true,
         queued: true,
         command: 'disconnect',
+        ownerNode,
+        queueName,
         jobId: enqueueResult.jobId,
         message: 'Comando de desconexão enfileirado com sucesso'
       });

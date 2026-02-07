@@ -2,32 +2,32 @@ const Queue = require('bull');
 
 class WhatsAppCommandQueue {
   constructor() {
-    this.queue = null;
-    this.initialized = false;
+    this.queues = new Map();
   }
 
   isEnabled() {
     return Boolean(process.env.REDIS_URL);
   }
 
-  getQueue() {
+  getQueue(queueName = 'whatsapp.commands.default') {
     if (!this.isEnabled()) {
       return null;
     }
 
-    if (!this.initialized) {
-      this.queue = new Queue('whatsapp.commands', process.env.REDIS_URL);
-      this.queue.on('error', (error) => {
-        console.error(`❌ [WhatsAppCommandQueue] Erro na fila: ${error.message}`);
+    if (!this.queues.has(queueName)) {
+      const queue = new Queue(queueName, process.env.REDIS_URL);
+      queue.on('error', (error) => {
+        console.error(`❌ [WhatsAppCommandQueue] Erro na fila ${queueName}: ${error.message}`);
       });
-      this.initialized = true;
+      this.queues.set(queueName, queue);
     }
 
-    return this.queue;
+    return this.queues.get(queueName);
   }
 
   async enqueue(command, payload, options = {}) {
-    const queue = this.getQueue();
+    const { queueName = 'whatsapp.commands.default', ...jobOptions } = options;
+    const queue = this.getQueue(queueName);
 
     if (!queue) {
       return { queued: false, reason: 'REDIS_URL não configurada' };
@@ -38,10 +38,10 @@ class WhatsAppCommandQueue {
       backoff: { type: 'exponential', delay: 2000 },
       removeOnComplete: true,
       removeOnFail: false,
-      ...options
+      ...jobOptions
     });
 
-    return { queued: true, jobId: job.id, command };
+    return { queued: true, jobId: job.id, command, queueName };
   }
 }
 

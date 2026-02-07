@@ -170,9 +170,9 @@ Fila principal: `whatsapp.commands`
 
 ## Fase 2 — Separar runtime de conexão
 
-- [ ] Criar processo `whatsapp-worker`.
-- [ ] API publica comandos na fila.
-- [ ] Worker consome e executa com ownership.
+- [x] Criar processo `whatsapp-worker`.
+- [x] API publica comandos na fila.
+- [x] Worker consome e executa com ownership.
 
 ### Critério de aceite
 
