@@ -118,6 +118,7 @@ exports.getInstances = async (req, res) => {
         sessionName: instance.sessionName,
         status: instance.status,
         qrCode: instance.qrCode,
+        qrCodeReady: Boolean(instance.qrCode),
         phoneNumber: instance.phoneNumber,
         lastConnection: instance.lastConnection,
         createdAt: instance.createdAt,
@@ -162,6 +163,7 @@ exports.getInstance = async (req, res) => {
         sessionName: instance.sessionName,
         status: instance.status,
         qrCode: instance.qrCode,
+        qrCodeReady: Boolean(instance.qrCode),
         phoneNumber: instance.phoneNumber,
         lastConnection: instance.lastConnection,
         createdAt: instance.createdAt,
@@ -203,6 +205,8 @@ exports.getQRCode = async (req, res) => {
     res.json({
       success: true,
       qrCode: instance.qrCode,
+      qrCodeReady: Boolean(instance.qrCode),
+      status: instance.status,
       message: 'QR Code gerado com sucesso'
     });
   } catch (error) {
@@ -365,6 +369,7 @@ exports.getInstanceStatus = async (req, res) => {
         sessionName: instance.sessionName,
         status: instance.status,
         phoneNumber: instance.phoneNumber,
+        qrCodeReady: Boolean(instance.qrCode),
         socketStatus: socketStatus,
         hasSocket: hasSocket
       }
