@@ -44,9 +44,14 @@ const mediaBatchSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+
+  scheduledAt: {
+    type: Date,
+    default: null
+  },
   status: {
     type: String,
-    enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'],
+    enum: ['pending', 'scheduled', 'processing', 'completed', 'failed', 'cancelled'],
     default: 'pending'
   },
   progress: {
@@ -74,5 +79,6 @@ const mediaBatchSchema = new mongoose.Schema({
 
 mediaBatchSchema.index({ userId: 1, createdAt: -1 });
 mediaBatchSchema.index({ status: 1 });
+mediaBatchSchema.index({ status: 1, scheduledAt: 1 });
 
 module.exports = mongoose.model('MediaBatch', mediaBatchSchema);
