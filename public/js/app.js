@@ -272,7 +272,7 @@ class Auth {
 
         setTimeout(() => {
             notification.style.display = 'none';
-        }, 3000);
+        }, 5000);
     }
 
     showLoading() {
@@ -1149,6 +1149,9 @@ class WhatsAppManager {
                         this.auth.showNotification('Falha ao conectar WhatsApp', 'error');
                         this.closeQRCodeModal();
                         this.emit('connectionFailed', data.instance);
+                    } else if (data.instance.status === 'disconnected' && !data.instance.qrCodeReady) {
+                        this.stopQRCodeCheck();
+                        this.auth.showNotification('Sessão desconectada. Tente recuperar sessão ou gerar novo QR.', 'warning');
                     }
                 }
 
@@ -1163,7 +1166,7 @@ class WhatsAppManager {
                 console.error('Erro ao verificar status:', error);
                 this.emit('error', error);
             }
-        }, 3000);
+        }, 5000);
     }
 
     stopQRCodeCheck() {

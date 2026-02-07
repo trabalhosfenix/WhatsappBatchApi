@@ -241,7 +241,9 @@ class WhatsAppService {
         socket.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            console.log(`🔗 [${sessionName}] Status: ${connection}`);
+            if (connection) {
+                console.log(`🔗 [${sessionName}] Status: ${connection}`);
+            }
 
             try {
                 switch (connection) {
@@ -253,8 +255,17 @@ class WhatsAppService {
                         if (qrTimeout) clearTimeout(qrTimeout);
                         if (connectionTimeout) clearTimeout(connectionTimeout);
 
+                        const statusCode = lastDisconnect?.error?.output?.statusCode;
+                        const qrAttemptsEnded = statusCode === 408;
                         const shouldReconnect =
-                            lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                            statusCode !== DisconnectReason.loggedOut && !qrAttemptsEnded;
+
+                        if (qrAttemptsEnded) {
+                            await WhatsAppInstance.findByIdAndUpdate(instanceId, {
+                                status: 'failed',
+                                qrCode: null
+                            });
+                        }
 
                         console.log(`🔄 [${sessionName}] Should reconnect: ${shouldReconnect}`);
 
@@ -322,7 +333,7 @@ class WhatsAppService {
                             if (this.connectionStates.get(sessionName) === 'connecting') {
                                 console.log(`⏰ [${sessionName}] Timeout de conexão`);
                                 await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                                    status: 'timeout'
+                                    status: 'failed'
                                 });
                             }
                         }, 30000); // 30 segundos
@@ -342,7 +353,7 @@ class WhatsAppService {
 
                         await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                             qrCode: qrCodeImage,
-                            status: 'qr_code_ready'
+                            status: 'connecting'
                         });
 
                         console.log(`✅ [${sessionName}] QR Code salvo no banco`);
@@ -353,14 +364,14 @@ class WhatsAppService {
                             console.log(`⏰ [${sessionName}] QR Code expirado`);
                             await WhatsAppInstance.findByIdAndUpdate(instanceId, {
                                 qrCode: null,
-                                status: 'qr_expired'
+                                status: 'failed'
                             });
                         }, 120000); // 2 minutos
 
                     } catch (qrError) {
                         console.error(`❌ [${sessionName}] Erro ao gerar QR Code:`, qrError);
                         await WhatsAppInstance.findByIdAndUpdate(instanceId, {
-                            status: 'error',
+                            status: 'failed',
                             error: 'Erro ao gerar QR code'
                         });
                     }
@@ -693,6 +704,10 @@ class WhatsAppService {
     async isConnected(sessionName) {
         const socket = this.sockets.get(sessionName);
         return socket && socket.user ? true : false;
+    }
+
+    async isInstanceConnected(sessionName) {
+        return this.isConnected(sessionName);
     }
 
     async getInstanceStatus(sessionName) {
