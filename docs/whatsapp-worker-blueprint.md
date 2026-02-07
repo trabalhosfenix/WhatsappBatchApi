@@ -183,8 +183,8 @@ Fila principal: `whatsapp.commands`
 
 - [ ] Migrar `auth_sessions` para storage compartilhado.
 - [x] Provider de sessão compartilhada inicial (`SHARED_SESSIONS_PATH`).
-- [ ] Bootstrap automático após restart de worker.
-- [ ] Reclaim de sessão ao detectar owner offline.
+- [x] Bootstrap automático após restart de worker.
+- [x] Reclaim de sessão ao detectar owner offline.
 
 ### Critério de aceite
 

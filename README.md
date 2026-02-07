@@ -30,6 +30,7 @@ Foi adicionado um blueprint técnico com fases de implantação, contratos de fi
    WORKER_NODE_LIST=api-node-1,api-node-2
    QUEUE_FIRST_MODE=true
    SHARED_SESSIONS_PATH=/mnt/efs/whatsapp-sessions
+   WORKER_HEARTBEAT_TIMEOUT_MS=30000
    ```
 3. Rode a API:
    ```bash
@@ -57,6 +58,8 @@ Fase 2.3 (queue-first em produção):
 
 Fase 3.1 (provider de sessão compartilhada):
 - sessões Baileys usam provider via `SHARED_SESSIONS_PATH` (EFS/NFS recomendado em produção)
+- worker executa bootstrap automático de recover ao subir quando há sessão persistida
+- ownership stale pode ser reassumido pelo owner determinístico (`WORKER_HEARTBEAT_TIMEOUT_MS`)
 
 ## Base URL
 - Local: `http://localhost:3000`

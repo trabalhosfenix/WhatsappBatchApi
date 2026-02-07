@@ -6,10 +6,12 @@ const WhatsAppCommandProcessor = require('../services/whatsappCommandProcessor')
 
 const processor = new WhatsAppCommandProcessor(whatsappService);
 let heartbeatTimer;
+let reclaimTimer;
 
 async function bootstrap() {
   await connectDB();
   await processor.start();
+  await processor.recoverOwnedSessionsOnStartup();
 
   heartbeatTimer = setInterval(async () => {
     try {
@@ -19,6 +21,14 @@ async function bootstrap() {
     }
   }, 10000);
 
+  reclaimTimer = setInterval(async () => {
+    try {
+      await processor.reclaimStaleOwnership();
+    } catch (error) {
+      console.warn(`⚠️ Falha no reclaim de ownership: ${error.message}`);
+    }
+  }, 15000);
+
   console.log('👷 WhatsApp worker ativo e aguardando comandos...');
 }
 
@@ -26,6 +36,7 @@ async function shutdown(signal) {
   console.log(`\n🛑 Worker recebeu ${signal}, encerrando...`);
   try {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (reclaimTimer) clearInterval(reclaimTimer);
     await processor.stop();
     await whatsappService.cleanupAllInstances();
     process.exit(0);
