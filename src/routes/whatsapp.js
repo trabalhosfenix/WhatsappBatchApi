@@ -25,4 +25,8 @@ router.get('/instances/:id/groups', whatsappController.getGroups);
 // Status
 router.get('/instances/:id/status', whatsappController.getInstanceStatus);
 
+// ✅ NOVAS ROTAS PARA GRUPOS POR INSTÂNCIA
+// router.get('/instances/:id/groups/sync', whatsappController.syncInstanceGroups);
+// router.get('/instances/:id/groups/filtered', whatsappController.getFilteredGroups);
+
 module.exports = router;

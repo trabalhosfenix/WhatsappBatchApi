@@ -1,6 +1,8 @@
 const ContactGroup = require('../models/ContactGroup');
 const WhatsAppInstance = require('../models/WhatsAppInstance');
 const whatsappBaileysService = require('../services/whatsappService');
+const messageControlService = require('../services/messageControlService');
+
 
 console.log('✅ WhatsAppController carregado - VERSÃO CORRIGIDA');
 
@@ -23,6 +25,15 @@ exports.createInstance = async (req, res) => {
 
     const instance = await whatsappBaileysService.createClient(sessionName, req.user._id);
     const updatedInstance = await WhatsAppInstance.findById(instance._id);
+
+    // setTimeout(async () => {
+    //   try {
+    //     await messageControlService.enableMessageTracking(sessionName);
+    //     console.log(`✅ Tracking ativado automaticamente para: ${sessionName}`);
+    //   } catch (trackingError) {
+    //     console.error(`❌ Erro no tracking automático:`, trackingError);
+    //   }
+    // }, 3000);
 
     res.status(201).json({
       success: true,
@@ -50,7 +61,7 @@ exports.createInstance = async (req, res) => {
 exports.deleteInstance = async (req, res) => {
   try {
     const { sessionName } = req.params;
-    
+
     if (!sessionName) {
       return res.status(400).json({
         success: false,
@@ -59,28 +70,28 @@ exports.deleteInstance = async (req, res) => {
     }
 
     console.log(`🗑️ [Baileys] Solicitação para deletar instância: ${sessionName}`);
-    
+
     // Verificar se a instância existe
-    const instance = await WhatsAppInstance.findOne({ 
-      sessionName, 
-      userId: req.user._id 
+    const instance = await WhatsAppInstance.findOne({
+      sessionName,
+      userId: req.user._id
     });
-    
+
     if (!instance) {
       return res.status(404).json({
         success: false,
         error: 'Instância não encontrada ou não pertence ao usuário'
       });
     }
-    
+
     // Deletar a instância usando o serviço
     await whatsappBaileysService.deleteInstance(sessionName);
-    
+
     res.status(200).json({
       success: true,
       message: `Instância ${sessionName} deletada com sucesso`
     });
-    
+
   } catch (error) {
     console.error('❌ [Baileys] Erro ao deletar instância:', error);
     res.status(500).json({
@@ -99,6 +110,7 @@ exports.getInstances = async (req, res) => {
 
     console.log(`📊 Encontradas ${instances.length} instâncias`);
 
+    
     res.json({
       success: true,
       instances: instances.map(instance => ({
@@ -112,6 +124,10 @@ exports.getInstances = async (req, res) => {
         updatedAt: instance.updatedAt
       }))
     });
+
+
+
+
   } catch (error) {
     console.error('❌ Erro ao buscar instâncias:', error);
     res.status(400).json({
@@ -136,6 +152,8 @@ exports.getInstance = async (req, res) => {
         error: 'Instância não encontrada'
       });
     }
+    // await messageControlService.enableMessageTracking(instance.sessionName);
+    // console.log(`✅ Tracking ativado automaticamente para: ${instance.sessionName}`);
 
     res.json({
       success: true,
@@ -229,7 +247,6 @@ exports.loadGroups = async (req, res) => {
       console.log(`🔄 Tentando reconectar instância...`);
       try {
         await whatsappBaileysService.reconnectInstance(instance.sessionName, req.user._id);
-        // Aguardar um pouco para reconexão
         await new Promise(resolve => setTimeout(resolve, 3000));
       } catch (reconnectError) {
         return res.status(400).json({
@@ -239,10 +256,13 @@ exports.loadGroups = async (req, res) => {
       }
     }
 
-    const groupCount = await whatsappBaileysService.loadGroupsFromWhatsApp(
+    // ✅ CORREÇÃO: Capturar o objeto retornado e extrair o total
+    const result = await whatsappBaileysService.loadGroupsFromWhatsApp(
       instance.sessionName,
       req.user._id
     );
+
+    const groupCount = result.total || 0; // Extrair o número de grupos
 
     // Atualizar grupos com a instância do WhatsApp
     await ContactGroup.updateMany(
@@ -254,14 +274,15 @@ exports.loadGroups = async (req, res) => {
         whatsappInstanceId: instance._id
       }
     );
-    
+
     console.log(`✅ ${groupCount} grupos carregados com sucesso`);
 
     res.json({
       success: true,
       message: `Grupos carregados com sucesso`,
       groupCount: groupCount,
-      instanceId: instance._id
+      instanceId: instance._id,
+      details: result // ✅ Incluir detalhes adicionais se necessário
     });
 
   } catch (error) {
@@ -301,7 +322,7 @@ exports.getGroups = async (req, res) => {
       success: true,
       groups: groups.map(group => ({
         _id: group._id,
-        name: group.name,
+        name: group.name,        
         description: group.description,
         contactCount: group.contactCount,
         participantCount: group.participantCount,

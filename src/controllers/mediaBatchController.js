@@ -13,7 +13,7 @@ class RateLimitService {
   async checkRateLimit(instanceId, type = 'media') {
     const now = Date.now();
     const windowSize = 60000; // 1 minuto
-    
+
     // Limites conservadores por tipo
     const maxLimits = {
       'message': 20,    // 20 mensagens/minuto
@@ -22,7 +22,7 @@ class RateLimitService {
     };
 
     const key = `${instanceId}-${type}`;
-    
+
     // Inicializar ou resetar janela
     if (!this.limits.has(key) || (now - this.limits.get(key).lastReset) > windowSize) {
       this.limits.set(key, {
@@ -33,7 +33,7 @@ class RateLimitService {
     }
 
     const limitData = this.limits.get(key);
-    
+
     // Verificar se excedeu o limite
     if (limitData.count >= maxLimits[type]) {
       const waitTime = windowSize - (now - limitData.lastReset);
@@ -48,7 +48,7 @@ class RateLimitService {
 
     // Incrementar contador
     limitData.count++;
-    
+
     return {
       allowed: true,
       remaining: maxLimits[type] - limitData.count,
@@ -61,7 +61,7 @@ class RateLimitService {
   cleanupOldLimits() {
     const now = Date.now();
     const oneHour = 3600000;
-    
+
     for (const [key, data] of this.limits.entries()) {
       if (now - data.lastReset > oneHour) {
         this.limits.delete(key);
@@ -76,24 +76,24 @@ const rateLimitService = new RateLimitService();
 // ✅ FUNÇÃO AUXILIAR PARA DELAY INTELIGENTE
 const smartDelay = async (instanceId, batchOptions) => {
   const baseDelay = batchOptions?.delayBetweenMessages || 2000;
-  
+
   // Verificar rate limit
   const limitCheck = await rateLimitService.checkRateLimit(instanceId, 'media');
-  
+
   if (!limitCheck.allowed) {
     console.log(`⏳ Rate limit excedido! Aguardando ${limitCheck.resetIn}s...`);
     await new Promise(resolve => setTimeout(resolve, limitCheck.waitTime + 1000));
-    
+
     // Log de warning
     console.warn(`🚨 RATE LIMIT: Instância ${instanceId} - ${limitCheck.current}/${limitCheck.max} mídias no último minuto`);
     return true; // Indicar que houve delay por rate limit
   }
-  
+
   // Delay normal entre mensagens
   if (baseDelay > 0) {
     await new Promise(resolve => setTimeout(resolve, baseDelay));
   }
-  
+
   return false;
 };
 
@@ -342,6 +342,7 @@ const processMediaBatch = async (batchId) => {
 };
 
 // ✅ CONTROLLER CREATE MEDIA BATCH COM VALIDAÇÃO DE LIMITES
+// mediaBatchController.js - ATUALIZAR createMediaBatch
 const createMediaBatch = async (req, res) => {
   console.log('📦 Criando novo lote de mídia...');
   console.log('Dados do lote:', req.body);
@@ -349,10 +350,11 @@ const createMediaBatch = async (req, res) => {
   try {
     const { name, mediaItems, contactGroupIds, whatsappInstanceId, caption, options } = req.body;
 
-    // ✅ DEBUG: VERIFICAR O QUE CHEGA DO FRONTEND
+    // ✅ DEBUG MELHORADO
     console.log('🔍 Dados recebidos do frontend:', {
       captionRecebido: caption,
-      optionsRecebidas: options
+      optionsRecebidas: options,
+      mediaItemsCount: mediaItems?.length
     });
 
     if (!name || !mediaItems || !contactGroupIds || !whatsappInstanceId) {
@@ -403,42 +405,38 @@ const createMediaBatch = async (req, res) => {
       });
     }
 
-    // ✅ VALIDAÇÃO DE LIMITES ANTES DE CRIAR O LOTE
-    if (totalSends > 100) {
-      console.warn(`⚠️ Lote grande detectado: ${totalSends} envios`);
-      // Poderia implementar confirmação para lotes muito grandes
-    }
-
-    // ✅ CORREÇÃO CRÍTICA: GARANTIR QUE CAPTION VÁ PARA AS OPTIONS
+    // ✅ CORREÇÃO CRÍTICA: SALVAR CAPTION CORRETAMENTE
     const batchOptions = {
       ...(options || {}),
-      caption: caption || options?.caption || '' // ← PRIORIDADE CORRETA
+      caption: caption || options?.caption || ''
     };
 
     console.log('🔄 Opções finais do batch:', batchOptions);
 
+    // ✅ CRIAR BATCH COM CAPTION NO NÍVEL PRINCIPAL E NAS OPTIONS
     const batch = await MediaBatch.create({
       userId: req.user._id,
       whatsappInstanceId,
       name,
       mediaItems,
       contactGroupIds,
-      caption: caption || '', // ← PRESERVAR NO BATCH TAMBÉM
+      caption: caption || '', // ✅ SALVAR NO NÍVEL PRINCIPAL
       progress: {
         total: totalSends,
         sent: 0,
         failed: 0
       },
-      options: batchOptions // ← USAR AS OPTIONS CORRIGIDAS
+      options: batchOptions // ✅ SALVAR NAS OPTIONS TAMBÉM
     });
 
     console.log('✅ Batch criado no banco:', {
       _id: batch._id,
-      caption: batch.caption,
-      options: batch.options
+      caption: batch.caption, // ✅ DEVE TER VALOR AGORA
+      optionsCaption: batch.options?.caption,
+      mediaItemsCount: batch.mediaItems.length
     });
 
-    // ✅ INICIAR PROCESSAMENTO COM RATE LIMITING
+    // ✅ INICIAR PROCESSAMENTO
     processMediaBatch(batch._id);
 
     res.status(201).json({
@@ -452,7 +450,7 @@ const createMediaBatch = async (req, res) => {
         mediaCount: batch.mediaItems.length,
         totalContacts: totalContacts,
         totalSends: totalSends,
-        caption: batch.caption, // ← INCLUIR CAPTION NA RESPOSTA
+        caption: batch.caption, // ✅ INCLUIR NA RESPOSTA
         options: batch.options,
         createdAt: batch.createdAt
       },
@@ -675,6 +673,50 @@ const cancelMediaBatch = async (req, res) => {
   }
 };
 
+// ✅ NOVA FUNÇÃO: Excluir lote de mídia
+const deleteMediaBatch = async (req, res) => {
+  try {
+    const batch = await MediaBatch.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+
+    if (!batch) {
+      return res.status(404).json({
+        success: false,
+        error: 'Lote de mídia não encontrado'
+      });
+    }
+
+    // ✅ OPCIONAL: Limpar arquivos de mídia associados
+    try {
+      for (const mediaItem of batch.mediaItems) {
+        // await mediaService.deleteMediaFile(mediaItem.url, req.user._id);
+        console.log(`🗑️ Arquivo de mídia não removido: ${mediaItem.url}`);
+      }
+    } catch (cleanupError) {
+      console.warn('⚠️ Aviso: Erro ao limpar arquivos de mídia:', cleanupError.message);
+      // Não falhar a operação principal se a limpeza der erro
+    }
+
+    res.json({
+      success: true,
+      message: 'Lote de mídia excluído com sucesso',
+      deletedBatch: {
+        _id: batch._id,
+        name: batch.name
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao excluir lote de mídia:', error);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 // ✅ EXPORTAR TODAS AS FUNÇÕES
 module.exports = {
   createMediaBatch,
@@ -684,5 +726,6 @@ module.exports = {
   getMediaBatch,
   cancelMediaBatch,
   processMediaBatch,
-  rateLimitService // Exportar para uso em outros controllers
+  rateLimitService, // Exportar para uso em outros controllers
+  deleteMediaBatch,
 };

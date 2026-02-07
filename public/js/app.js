@@ -151,6 +151,7 @@ class Auth {
             });
 
             const data = await response.json();
+            console.log('Login response data:', data);
 
             if (data.success) {
                 this.token = data.token;
@@ -2192,6 +2193,7 @@ class App {
                 break;
             case 'batchesSection':
                 console.log('Batches section activated');
+                this.batches.loadBatches();
                 break;
             default:
                 console.log('Unknown section:', sectionId);

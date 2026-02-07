@@ -6,6 +6,9 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const mongoose = require('mongoose'); // ✅ ADICIONAR
 const mediaBatchRoutes = require('./routes/mediaBatches');
+const messageControlRoutes = require('./routes/messageControl');
+const adminRoutes = require('./routes/admin');
+
 
 
 // ✅ CORREÇÃO: Remover import do connectDB e conectar diretamente
@@ -15,10 +18,13 @@ mongoose.connect(MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('✅ Conectado ao MongoDB'))
-.catch(err => console.error('❌ Erro ao conectar MongoDB:', err));
+  .then(() => console.log('✅ Conectado ao MongoDB'))
+  .catch(err => console.error('❌ Erro ao conectar MongoDB:', err));
+
+
 
 // Importar rotas
+
 const authRoutes = require('./routes/auth');
 const batchRoutes = require('./routes/batches');
 const contactGroupRoutes = require('./routes/contactGroups');
@@ -30,10 +36,31 @@ const app = express();
 app.use(helmet({
   contentSecurityPolicy: false
 }));
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
-  credentials: true
-}));
+
+
+const allowedOrigins = (process.env.CORS_ORIGIN || '*')
+  .split(',')
+  .map(o => o.trim());
+
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // Postman / server requests
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        console.warn(`❌ CORS bloqueado: ${origin}`);
+        return callback(null, true); // permite continuar, só loga
+      }
+    },
+    credentials: true,
+  })
+);
+
+
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -45,6 +72,9 @@ app.use('/api/media', mediaBatchRoutes);
 
 // Servir arquivos de mídia estáticos (se necessário)
 app.use('/media', express.static(path.join(__dirname, 'uploads/media')));
+
+app.use('/api/message-control', messageControlRoutes);
+
 
 
 // Rate limiting
@@ -65,8 +95,8 @@ app.use('/api/whatsapp', whatsappRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development'
   });
@@ -74,7 +104,7 @@ app.get('/health', (req, res) => {
 
 // Rota para a interface web (se existir)
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'WhatsApp Batch API',
     version: '1.0.0',
     endpoints: {
@@ -86,18 +116,26 @@ app.get('/', (req, res) => {
   });
 });
 
+// Servir admin.html
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/admin.html'));
+});
+
 // Rota não encontrada
 app.use('*', (req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
-    error: 'Rota não encontrada' 
+    error: 'Rota não encontrada'
   });
 });
+
+app.use('/api/admin', adminRoutes);
+
 
 // Error handling
 app.use((error, req, res, next) => {
   console.error('❌ Erro:', error.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     success: false,
     error: 'Erro interno do servidor',
     ...(process.env.NODE_ENV === 'development' && { details: error.message })

@@ -39,6 +39,11 @@ const mediaBatchSchema = new mongoose.Schema({
     ref: 'ContactGroup',
     required: true
   }],
+  // ✅ CORREÇÃO: ADICIONAR CAMPO CAPTION NO NÍVEL PRINCIPAL
+  caption: {
+    type: String,
+    default: ''
+  },
   status: {
     type: String,
     enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'],
@@ -52,7 +57,7 @@ const mediaBatchSchema = new mongoose.Schema({
   options: {
     delayBetweenMessages: { type: Number, default: 2000, min: 1000, max: 60000 },
     sendAsDocument: { type: Boolean, default: false },
-    caption: { type: String, default: '' } // ← CORREÇÃO: Adicionado campo caption
+    caption: { type: String, default: '' }
   },
   results: [{
     contact: String,

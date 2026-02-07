@@ -1,16 +1,22 @@
+// 📁 routes/contactGroups.js - ATUALIZAR
 const express = require('express');
 const router = express.Router();
 const { auth } = require('../middleware/auth');
 const contactGroupController = require('../controllers/contactGroupController');
 
-// Aplicar middleware de autenticação em todas as rotas
-router.get('/', auth, contactGroupController.getContactGroups);
-router.post('/', auth, contactGroupController.createContactGroup);
-router.get('/:id', auth, contactGroupController.getContactGroup);
-router.put('/:id', auth, contactGroupController.updateContactGroup);
-router.delete('/:id', auth, contactGroupController.deleteContactGroup);
-router.post('/:id/contacts', auth, contactGroupController.addContactsToGroup);
+router.use(auth);
 
+// Rotas existentes
+router.get('/', contactGroupController.getContactGroups);
+router.post('/', contactGroupController.createContactGroup);
+router.get('/:id', contactGroupController.getContactGroup);
+router.put('/:id', contactGroupController.updateContactGroup);
+router.delete('/:id', contactGroupController.deleteContactGroup);
+router.post('/:id/contacts', contactGroupController.addContactsToGroup);
 
+// ✅ NOVAS ROTAS PARA GRUPOS POR INSTÂNCIA
+router.get('/instance/:instanceId', contactGroupController.getGroupsByInstance);
+router.post('/instance/:instanceId/sync', contactGroupController.syncInstanceGroups);
+router.get('/filters/advanced', contactGroupController.getGroupsWithFilters);
 
 module.exports = router;
