@@ -1,5 +1,6 @@
-// 📁 controllers/contactGroupController.js - VERIFICAR SE ESTÁ COMPLETO
 const ContactGroup = require('../models/ContactGroup');
+const WhatsAppInstance = require('../models/WhatsAppInstance');
+const whatsappService = require('../services/whatsappService');
 
 exports.createContactGroup = async (req, res) => {
   try {
@@ -38,7 +39,6 @@ exports.createContactGroup = async (req, res) => {
   }
 };
 
-// ✅ VERIFICAR SE ESTA FUNÇÃO EXISTE:
 exports.getContactGroups = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -177,8 +177,6 @@ exports.addContactsToGroup = async (req, res) => {
   }
 };
 
-// 📁 controllers/contactGroupController.js - ADICIONAR ESTES MÉTODOS
-
 /**
  * Buscar grupos por instância do WhatsApp
  */
@@ -212,18 +210,20 @@ exports.getGroupsByInstance = async (req, res) => {
 /**
  * Sincronizar grupos de uma instância específica
  */
-// 📁 controllers/whatsappController.js - ADICIONAR MÉTODOS
-
-/**
- * Sincronizar grupos de uma instância específica
- */
 exports.syncInstanceGroups = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { instanceId } = req.params;
     const userId = req.user._id;
 
+    if (!instanceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'ID da instância é obrigatório'
+      });
+    }
+
     const instance = await WhatsAppInstance.findOne({
-      _id: id,
+      _id: instanceId,
       userId: userId
     });
 
